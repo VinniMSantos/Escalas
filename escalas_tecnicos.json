@@ -1,0 +1,119 @@
+{
+  "Allef Barbosa": {
+    "escala": "5X2",
+    "horario_inicio": "08:00",
+    "horario_fim": "17:00",
+    "dias_trabalho": [1, 2, 3, 4, 5],
+    "email": "allef.barbosa@libertyti.com.br"
+  },
+  "Vinicius Oliveira": {
+    "escala": "5X2",
+    "horario_inicio": "08:00",
+    "horario_fim": "17:00",
+    "dias_trabalho": [1, 2, 3, 4, 5],
+    "email": "vinicius.oliveira@libertyti.com.br"
+  },
+  "Gabriel Santana": {
+    "escala": "5X2",
+    "horario_inicio": "08:00",
+    "horario_fim": "17:00",
+    "dias_trabalho": [1, 2, 3, 4, 5],
+    "email": "gabriel.santana@libertyti.com.br"
+  },
+  "Mateus Marinho": {
+    "escala": "5X2",
+    "horario_inicio": "07:00",
+    "horario_fim": "16:00",
+    "dias_trabalho": [1, 2, 3, 4, 5],
+    "email": "mateus.marinho@libertyti.com.br",
+    "sobreaviso": {
+      "faz_sobreaviso": true,
+      "horario_sem_unidade": {
+        "inicio": "08:00",
+        "fim": "18:00"
+      },
+      "horario_com_unidade": {
+        "inicio": "08:00",
+        "fim": "17:00"
+      }
+    }
+  },
+  "Eduardo Lima": {
+    "escala": "5X2",
+    "horario_inicio": "07:00",
+    "horario_fim": "16:00",
+    "dias_trabalho": [1, 2, 3, 4, 5],
+    "email": "eduardo.lima@libertyti.com.br",
+    "sobreaviso": {
+      "faz_sobreaviso": true,
+      "horario_sem_unidade": {
+        "inicio": "08:00",
+        "fim": "18:00"
+      },
+      "horario_com_unidade": {
+        "inicio": "08:00",
+        "fim": "17:00"
+      }
+    }
+  },
+  "Ivaldo Junior": {
+    "escala": "5X2",
+    "horario_inicio": "11:00",
+    "horario_fim": "20:00",
+    "dias_trabalho": [1, 2, 3, 4, 5],
+    "email": "ivaldo.junior@libertyti.com.br",
+    "sobreaviso": {
+      "faz_sobreaviso": true,
+      "horario_sem_unidade": {
+        "inicio": "08:00",
+        "fim": "18:00"
+      },
+      "horario_com_unidade": {
+        "inicio": "08:00",
+        "fim": "17:00"
+      }
+    }
+  },
+  "Kaue Rodrigues": {
+    "escala": "5X2",
+    "horario_inicio": "11:00",
+    "horario_fim": "20:00",
+    "dias_trabalho": [1, 2, 3, 4, 5],
+    "email": "kaue.rodrigues@libertyti.com.br",
+    "sobreaviso": {
+      "faz_sobreaviso": true,
+      "horario_sem_unidade": {
+        "inicio": "08:00",
+        "fim": "18:00"
+      },
+      "horario_com_unidade": {
+        "inicio": "08:00",
+        "fim": "17:00"
+      }
+    }
+  },
+  "Geovanna Oliveira": {
+    "escala": "12X36",
+    "horario_inicio": "08:00",
+    "horario_fim": "20:00",
+    "email": "geovanna.oliveira@libertyti.com.br"
+  },
+  "Eduardo Miranda": {
+    "escala": "12X36",
+    "horario_inicio": "18:00",
+    "horario_fim": "06:00",
+    "email": "eduardo.miranda@libertyti.com.br"
+  },
+  "Gustavo Silva": {
+    "escala": "12X36",
+    "horario_inicio": "08:00",
+    "horario_fim": "20:00",
+    "email": "gustavo.silva@libertyti.com.br"
+  },
+  "Vitor Martins": {
+    "escala": "12X36",
+    "horario_inicio": "18:00",
+    "horario_fim": "06:00",
+    "email": "vitor.martins@libertyti.com.br"
+  }
+}
