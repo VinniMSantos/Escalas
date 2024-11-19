@@ -13,12 +13,12 @@
     "dias_trabalho": [1, 2, 3, 4, 5],
     "email": "vinicius.oliveira@libertyti.com.br"
   },
-  "Gabriel Santana": {
+  "Valdemir Araujo": {
     "escala": "5X2",
     "horario_inicio": "08:00",
     "horario_fim": "17:00",
     "dias_trabalho": [1, 2, 3, 4, 5],
-    "email": "gabriel.santana@libertyti.com.br"
+    "email": "valdemir.araujo@libertyti.com.br"
   },
   "Mateus Marinho": {
     "escala": "5X2",
@@ -98,17 +98,23 @@
     "horario_fim": "20:00",
     "email": "geovanna.oliveira@libertyti.com.br"
   },
-  "Eduardo Miranda": {
+  "Andre Assis": {
     "escala": "12X36",
     "horario_inicio": "18:00",
     "horario_fim": "06:00",
-    "email": "eduardo.miranda@libertyti.com.br"
+    "email": "andre.assis@libertyti.com.br"
   },
   "Gustavo Silva": {
     "escala": "12X36",
     "horario_inicio": "08:00",
     "horario_fim": "20:00",
     "email": "gustavo.silva@libertyti.com.br"
+  },
+  "João Marinho": {
+    "escala": "12X36",
+    "horario_inicio": "08:00",
+    "horario_fim": "20:00",
+    "email": "joao.marinho@libertyti.com.br"
   },
   "Vitor Martins": {
     "escala": "12X36",

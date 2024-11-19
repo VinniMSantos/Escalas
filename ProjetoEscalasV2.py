@@ -35,7 +35,9 @@ technician_emails = {
     "Geovanna Oliveira": "geovanna.oliveira@libertyti.com.br",
     "Gustavo Silva": "gustavo.silva@libertyti.com.br",
     "Vitor Martins": "vitor.martins@libertyti.com.br",
-    "Mateus Marinho": "vinicius.santos@libertyti.com.br"
+    "Mateus Marinho": "vinicius.santos@libertyti.com.br",
+    "Joao Marinho": "joao.marinho@libertyti.com.br",
+    "Andre Assis": "andre.assis@libertyti.com.br"
 }
 
 # Classe ClickableLabel
@@ -722,7 +724,16 @@ class ScheduleForm(QWidget):
         localizacao_options = ["", "Folga", "Férias", "Sobreaviso", "Unidade", "Escritório", "Home"]
 
         # Definir as listas com os valores especificados
-        unidades = ["teste1", "teste2"]
+        unidades = unidades = [ "AMA Zaio", "CRST Freguesia do Ó", "CRST Lapa", "CRST Leste", "CRST Mooca", "CRST Santo Amaro", "CRST Sé", "HD Brasilandia", "HM Alipio", "HM Benedicto", "HM Brasilandia", "HM Brigadeiro", "HM Cachoeirinha", "HM Campo Limpo", "H Cantareira", "HM Capela Do Socorro", "HM Hungria", "HM Ignacio", "HM Mario Degni", "HM Saboya",
+"HM Sorocabana", "HM Tatuape", "HM Tide", "HM Waldomiro", "HM Zaio", "PA Sao Mateus", "PSM Balneario Sao Jose", "PSM Lapa", "UPA Dona Maria Antonieta", "UPA Elisa Maria", "UPA Parelheiros", "UPA Pedreira", "UPA Peri", "UPA 21 de Junho", "UPA Santo Amaro",
+"UPA Parque Doroteia", "UPA 26 de Agosto", "UPA Campo Limpo", "UPA Tiradentes", "UPA City Jaragua", "UPA Ermelino Matarazzo", "UPA Carrao", "UPA Rio Pequeno", "UPA Jabaquara", "UPA Jacana", "UPA Jardim Angela", "UPA Julio Tupy", "UPA Mooca", "UPA Perus", "UPA Pirituba", "UPA Tatuape", "UPA Tito Lopes", "UPA Vera Cruz", "UPA Vergueiro", "UPA Vila Mariana",
+"UPA Vila Santa Catarina", "CAPS AD II Cachoeirinha", "CAPS AD II Cangaiba", "CAPS AD II Cidade Ademar", "CAPS AD II Ermelino Matarazzo", "CAPS AD II Guaianases", "CAPS AD II Jabaquara", "CAPS AD II Jardim Nelia", "CAPS AD II Mooca", "CAPS AD II Pinheiros", "CAPS AD II Sacoma", "CAPS AD II Santo Amaro", "CAPS AD II Sapopemba", "CAPS AD II Vila Madalena Prosam", "CAPS AD II Vila Mariana", "CAPS AD III Armenia", "CAPS AD III Boracea", "CAPS AD III Butanta", "CAPS AD III Campo Limpo", "CAPS AD III Capela Do Socorro",
+"CAPS AD III Centro", "CAPS AD III Complexo Prates", "CAPS AD III Freguesia Do O Brasilandia", "CAPS AD III Grajau", "CAPS AD III Heliopolis", "CAPS AD III Itaquera", "CAPS AD III Jardim Angela", "CAPS AD III Jardim Sao Luiz", "CAPS AD III Leopoldina", "CAPS AD III Paraisopolis", "CAPS AD III Penha", "CAPS AD III Pirituba Casa Azul", "CAPS AD III Santana", "CAPS AD III Sao Mateus Liberdade De Escolha", "CAPS AD III Sao Miguel", "CAPS AD IV Redencao", "CAPS Adulto II Aricanduva Formosa", "CAPS Adulto II Butanta", "CAPS Adulto II Casa Verde", "CAPS Adulto II Cidade Ademar",
+"CAPS Adulto II Cidade Tiradentes", "CAPS Adulto II Ermelino Matarazzo", "CAPS Adulto II Guaianases Artur Bispo Do Rosario", "CAPS Adulto II Itaim Paulista", "CAPS Adulto II Itaquera", "CAPS Adulto II Jardim Lidia", "CAPS Adulto II Jabaquara", "CAPS Adulto II Jacana Dr Leonidio Galvao Dos Santos", "CAPS Adulto II Perdizes Manoel Munhoz", "CAPS Adulto II Perus", "CAPS Adulto II Sao Miguel", "CAPS Adulto II V Monumento", "CAPS Adulto II Vila Prudente", "CAPS Adulto III Capela Do Socorro", "CAPS Adulto III Freguesia Do O Brasilandia", "CAPS Adulto III Grajau", "CAPS Adulto III Itaim Bibi", "CAPS Adulto III Jardim Sao Luiz", "CAPS Adulto III Lapa", "CAPS Adulto III Largo 13",
+"CAPS Adulto III M Boi Mirim", "CAPS Adulto III Mandaqui", "CAPS Adulto III Mooca", "CAPS Adulto III Paraisopolis", "CAPS Adulto III Parelheiros", "CAPS Adulto III Pirituba Jaragua", "CAPS Adulto III Sao Mateus", "CAPS Adulto III Sapopemba", "CAPS Adulto III Se", "CAPS Adulto III Vila Matilde", "CAPS IJ II Pirituba Jaragua", "CAPS IJ II Vila Mariana Quixote", "CAPS IJ II Butanta", "CAPS IJ II Campo Limpo", "CAPS IJ II Capela Do Socorro Piracao", "CAPS IJ II Casa Verde Nise Da Silveira", "CAPS IJ II Cidade Ademar", "CAPS IJ II Cidade Lider", "CAPS IJ II Cidade Tiradentes", "CAPS IJ II Ermelino Matarazzo",
+"CAPS IJ II Freguesia Do O Brasilandia", "CAPS IJ II Guaianases Coloridamente", "CAPS IJ II Ipiranga", "CAPS IJ II Itaim Paulista", "CAPS IJ II Itaquera", "CAPS IJ II Jabaquara Casinha", "CAPS IJ II Lapa", "CAPS IJ II M Boi Mirim", "CAPS IJ II Mooca", "CAPS IJ II Parelheiros Aquarela", "CAPS IJ II Perus", "CAPS IJ II Santo Amaro", "CAPS IJ II Sao Mateus", "CAPS IJ II Sapopemba", "CAPS IJ II Vila Maria Vila Guilherme", "CAPS IJ II Vila Prudente", "CAPS IJ III Aricanduva", "CAPS IJ III Cidade Dutra", "CAPS IJ III Heliopolis", "CAPS IJ III Jardim Sao Luiz",
+"CAPS IJ III Penha", "CAPS IJ III Santana", "CAPS IJ III Sao Miguel"
+]
         tecnicos = list(self.technician_schedules.keys())
         turnos = ["Diurno", "Noturno"]
 
