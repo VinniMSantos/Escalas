@@ -6,13 +6,6 @@
     "dias_trabalho": [1, 2, 3, 4, 5],
     "email": "allef.barbosa@libertyti.com.br"
   },
-  "Vinicius Oliveira": {
-    "escala": "5X2",
-    "horario_inicio": "08:00",
-    "horario_fim": "17:00",
-    "dias_trabalho": [1, 2, 3, 4, 5],
-    "email": "vinicius.oliveira@libertyti.com.br"
-  },
   "Valdemir Araujo": {
     "escala": "5X2",
     "horario_inicio": "08:00",
@@ -44,24 +37,6 @@
     "horario_fim": "16:00",
     "dias_trabalho": [1, 2, 3, 4, 5],
     "email": "eduardo.lima@libertyti.com.br",
-    "sobreaviso": {
-      "faz_sobreaviso": true,
-      "horario_sem_unidade": {
-        "inicio": "08:00",
-        "fim": "18:00"
-      },
-      "horario_com_unidade": {
-        "inicio": "08:00",
-        "fim": "17:00"
-      }
-    }
-  },
-  "Ivaldo Junior": {
-    "escala": "5X2",
-    "horario_inicio": "11:00",
-    "horario_fim": "20:00",
-    "dias_trabalho": [1, 2, 3, 4, 5],
-    "email": "ivaldo.junior@libertyti.com.br",
     "sobreaviso": {
       "faz_sobreaviso": true,
       "horario_sem_unidade": {

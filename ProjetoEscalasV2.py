@@ -1,6 +1,13 @@
-import json
 import sys
-import win32com.client  # Importação para interagir com o Outlook
+import json
+import locale
+import datetime
+from datetime import timedelta
+import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.styles import numbers
+import win32com.client  # Para interação com Outlook
+
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBox, QDateTimeEdit,
     QPushButton, QLineEdit, QCompleter, QTableWidget, QTableWidgetItem, QHeaderView,
@@ -12,16 +19,14 @@ from PyQt5.QtCore import (
     QRegularExpression, QPoint, pyqtSignal, QEvent
 )
 from PyQt5.QtGui import QFont, QIcon, QMouseEvent, QColor, QLinearGradient, QBrush
-import pandas as pd  # Biblioteca para manipulação de planilhas Excel
-from openpyxl import load_workbook
-from openpyxl.styles import numbers
-from datetime import timedelta
-import datetime  # Importação do módulo datetime
-import locale  # Importação para configurar a localidade
 
 # Dicionário com e-mails dos gestores das unidades
 unit_manager_emails = {
-    "AMA Zaio": "allef.barbosa@libertyti.com.br",
+    "AMA Zaio": "vinicius.santos@libertyti.com.br",
+    "HM Benedicto": "gessica.neves@libertyti.com.br",
+    "HM Campo Limpo": "eduardo.lima@libertyti.com.br",
+    "HM Tatuape": "gabriel.ribeiro@libertyti.com.br",
+    "HM Tide": "natalia.lima@libertyti.com.br"
     # Adicione as outras unidades e seus respectivos e-mails
 }
 
@@ -29,7 +34,7 @@ unit_manager_emails = {
 technician_emails = {
     "Allef Barbosa": "allef.barbosa@libertyti.com.br",
     "Vinicius Oliveira": "vinicius.oliveira@libertyti.com.br",
-    "Eduardo Lima": "eduardo.lima@libertyti.com.br",
+    "Eduardo Lima": "vinicius.santos@libertyti.com.br",
     "Ivaldo Junior": "ivaldo.junior@libertyti.com.br",
     "Kaue Rodrigues": "kaue.rodrigues@libertyti.com.br",
     "Geovanna Oliveira": "geovanna.oliveira@libertyti.com.br",
@@ -40,6 +45,41 @@ technician_emails = {
     "Andre Assis": "andre.assis@libertyti.com.br"
 }
 
+# Função Global para Envio de E-mails
+def send_email(to_email, subject, html_body, send_time=None):
+    try:
+        outlook = win32com.client.Dispatch('outlook.application')
+        mail = outlook.CreateItem(0)
+        mail.To = to_email
+        mail.Subject = subject
+        mail.HTMLBody = html_body
+
+        assinatura_path = r"C:\Users\LIBERTY\Documents\escalas versao\Escalas\assinatura_vinicius.png.png"
+        attachment = mail.Attachments.Add(assinatura_path)
+
+        attachment.PropertyAccessor.SetProperty(
+            "http://schemas.microsoft.com/mapi/proptag/0x3712001F", 
+            "MinhaImagem"
+        )
+
+        if send_time:
+            # Verifica se o horário agendado já passou
+            if send_time <= datetime.datetime.now():
+                # Se o horário já passou, envia imediatamente
+                pass  # Não define DeferredDeliveryTime
+            else:
+                # Se o horário está no futuro, agenda o envio
+                mail.DeferredDeliveryTime = send_time
+        # Envia o e-mail
+        mail.Send()
+
+        # Força o envio/recebimento para garantir que o e-mail saia da caixa de saída
+        namespace = outlook.GetNamespace("MAPI")
+        namespace.SendAndReceive(False)
+
+    except Exception as e:
+        QMessageBox.warning(None, "Erro", f"Falha ao enviar e-mail para {to_email}: {e}")
+
 # Classe ClickableLabel
 class ClickableLabel(QLabel):
     clicked = pyqtSignal()
@@ -47,30 +87,35 @@ class ClickableLabel(QLabel):
     def mousePressEvent(self, event):
         self.clicked.emit()
 
-# Classe SubstringFilterProxyModel
+# Classe SubstringFilterProxyModel para Filtragem por Substring
 class SubstringFilterProxyModel(QSortFilterProxyModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFilterCaseSensitivity(Qt.CaseInsensitive)
-        self.setFilterRole(Qt.DisplayRole)
+        self.setFilterKeyColumn(0)  # Filtra apenas na coluna 0
 
-    def filterAcceptsRow(self, sourceRow, sourceParent):
+    def filterAcceptsRow(self, source_row, source_parent):
+        # Se não houver padrão de filtro, aceita todas as linhas
         if not self.filterRegularExpression().pattern():
-            return True  # Sem filtro, aceita todas as linhas
-        index = self.sourceModel().index(sourceRow, self.filterKeyColumn(), sourceParent)
-        data = self.sourceModel().data(index, self.filterRole())
-        if self.filterRegularExpression().match(data).hasMatch():
+            return True
+        
+        model = self.sourceModel()
+        index = model.index(source_row, 0, source_parent)  # Apenas a coluna 0
+        data = model.data(index, Qt.DisplayRole)  # Inclui o segundo argumento 'role'
+        
+        if data and self.filterRegularExpression().match(data).hasMatch():
             return True
         return False
 
-# Classe FilteredComboBox
+
+# Classe FilteredComboBox com Autocomplete e Filtragem Personalizada
 class FilteredComboBox(QComboBox):
     def __init__(self, items, parent=None):
         super().__init__(parent)
         self.setEditable(True)
         self.setInsertPolicy(QComboBox.NoInsert)
 
-        # Modelo base com todos os itens
+        # Configuração do modelo base
         self.model_base = QStringListModel(items)
 
         # Proxy model personalizado para filtragem por substring
@@ -129,7 +174,7 @@ class FilteredComboBox(QComboBox):
                 self.parent().handle_enter_press()
         return super().eventFilter(source, event)
 
-# Classe SelectionDialog
+# Classe SelectionDialog para Seleção de Planilha e Período
 class SelectionDialog(QDialog):
     def __init__(self):
         super().__init__()
@@ -142,7 +187,7 @@ class SelectionDialog(QDialog):
 
     def init_ui(self):
         self.setWindowTitle("Seleção de Planilha e Período")
-        self.resize(400, 250)
+        self.resize(400, 300)
         layout = QVBoxLayout()
 
         # Botão para selecionar a planilha
@@ -237,7 +282,7 @@ class SelectionDialog(QDialog):
             }
         """
 
-# Classe PeriodoConsultaDialog
+# Classe PeriodoConsultaDialog para Seleção de Período de Consulta
 class PeriodoConsultaDialog(QDialog):
     def __init__(self):
         super().__init__()
@@ -294,7 +339,7 @@ class PeriodoConsultaDialog(QDialog):
             }
         """
 
-# Classe TechnicianSelectionDialog
+# Classe TechnicianSelectionDialog para Seleção de Técnicos
 class TechnicianSelectionDialog(QDialog):
     def __init__(self, tecnicos, technician_schedules):
         super().__init__()
@@ -393,7 +438,7 @@ class TechnicianSelectionDialog(QDialog):
             }
         """
 
-# Classe EmailSelectionDialog
+# Classe EmailSelectionDialog para Seleção de Técnicos e Período para Envio
 class EmailSelectionDialog(QDialog):
     def __init__(self, tecnicos, periodo_inicio, periodo_fim):
         super().__init__()
@@ -470,7 +515,503 @@ class EmailSelectionDialog(QDialog):
             }
         """
 
-# Classe ScheduleForm
+# Classe ConsultaEscalaDialog para Consulta de Escalas
+class ConsultaEscalaDialog(QDialog):
+    def __init__(self, df_filtered, planilha_path, df_existing, periodo_inicio, periodo_fim, labels):
+        super().__init__()
+        self.setWindowIcon(QIcon('JT.ico'))
+        self.df_filtered = df_filtered.copy()
+        self.planilha_path = planilha_path
+        self.df_existing = df_existing.copy()
+        self.periodo_inicio = periodo_inicio
+        self.periodo_fim = periodo_fim
+        self.labels = labels  # Inclui 'SEQ' agora
+        self.sort_columns = []  # Lista de colunas de ordenação
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("Consulta de Escala")
+        self.showMaximized()
+        layout = QVBoxLayout()
+
+        # Reordenar as colunas
+        self.df_filtered = self.df_filtered[self.labels]
+
+        # Converter colunas de data/hora para datetime
+        for col in ['DATA/HORA INICIO', 'DATA/HORA FIM']:
+            self.df_filtered[col] = pd.to_datetime(
+                self.df_filtered[col], format="%d/%m/%Y %H:%M:%S", errors='coerce'
+            )
+
+        # Tabela para exibir os dados
+        self.table_widget = QTableWidget()
+        self.table_widget.setRowCount(len(self.df_filtered))
+        self.table_widget.setColumnCount(len(self.df_filtered.columns))
+        self.table_widget.setHorizontalHeaderLabels(self.df_filtered.columns.tolist())
+        self.table_widget.horizontalHeader().setStretchLastSection(True)
+        # Ajustar o tamanho das seções para que os títulos sejam completamente visíveis
+        self.table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table_widget.horizontalHeader().setMinimumSectionSize(100)
+        self.table_widget.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table_widget.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table_widget.setStyleSheet("""
+            QTableWidget {
+                font-size: 14px;
+                font-family: 'Segoe UI', sans-serif;
+            }
+            QTableWidget::item:selected {
+                background-color: #007bff;
+                color: #fff;
+            }
+            QHeaderView::section {
+                background-color: #343a40;
+                color: white;
+                font-weight: bold;
+                font-size: 14px;
+                height: 30px;
+            }
+        """)
+
+        # Habilitar a ordenação nos cabeçalhos
+        self.table_widget.horizontalHeader().setSectionsClickable(True)
+        self.table_widget.horizontalHeader().setSortIndicatorShown(True)
+        self.table_widget.horizontalHeader().sectionClicked.connect(self.handle_header_click)
+
+        # Preencher a tabela com os dados
+        self.populate_table()
+
+        layout.addWidget(self.table_widget)
+
+        # Botões de editar, excluir, salvar e enviar escala
+        buttons_layout = QHBoxLayout()
+        buttons_layout.addStretch()
+
+        self.edit_button = QPushButton(" Editar")
+        self.edit_button.setFixedSize(140, 40)
+        self.edit_button.setIcon(QIcon("icons/edit.png"))
+        self.edit_button.setStyleSheet(self.get_warning_button_style())
+        self.edit_button.clicked.connect(self.enable_editing)
+        buttons_layout.addWidget(self.edit_button)
+
+        self.delete_button = QPushButton(" Excluir")
+        self.delete_button.setFixedSize(140, 40)
+        self.delete_button.setIcon(QIcon("icons/delete.png"))
+        self.delete_button.setStyleSheet(self.get_danger_button_style())
+        self.delete_button.clicked.connect(self.delete_entry)
+        buttons_layout.addWidget(self.delete_button)
+
+        self.save_button = QPushButton(" Salvar Alterações")
+        self.save_button.setFixedSize(180, 40)
+        self.save_button.setIcon(QIcon("icons/save.png"))
+        self.save_button.setStyleSheet(self.get_primary_button_style())
+        self.save_button.clicked.connect(self.save_changes)
+        buttons_layout.addWidget(self.save_button)
+
+        # Botão para Enviar E-mails
+        self.send_email_button = QPushButton(" Enviar Escala")
+        self.send_email_button.setFixedSize(180, 40)
+        self.send_email_button.setIcon(QIcon("icons/email.png"))
+        self.send_email_button.setStyleSheet(self.get_primary_button_style())
+        self.send_email_button.clicked.connect(self.send_emails)
+        buttons_layout.addWidget(self.send_email_button)
+
+        layout.addLayout(buttons_layout)
+        self.setLayout(layout)
+
+    def get_primary_button_style(self):
+        return """
+            QPushButton {
+                background-color: #007bff;
+                color: white;
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """
+
+    def get_warning_button_style(self):
+        return """
+            QPushButton {
+                background-color: #ffc107;
+                color: #212529;
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #e0a800;
+            }
+        """
+
+    def get_danger_button_style(self):
+        return """
+            QPushButton {
+                background-color: #dc3545;
+                color: white;
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #bd2130;
+            }
+        """
+
+    def handle_header_click(self, logicalIndex):
+        column_name = self.df_filtered.columns[logicalIndex]
+        existing = next((item for item in self.sort_columns if item[0] == column_name), None)
+        if existing:
+            self.sort_columns.remove(existing)
+            ascending = not existing[1]
+        else:
+            ascending = True
+
+        self.sort_columns.insert(0, (column_name, ascending))
+        order = Qt.AscendingOrder if ascending else Qt.DescendingOrder
+        self.table_widget.horizontalHeader().setSortIndicator(logicalIndex, order)
+        self.sort_table()
+
+    def sort_table(self):
+        if not self.sort_columns:
+            return
+
+        sort_by = [col for col, asc in self.sort_columns]
+        ascending = [asc for col, asc in self.sort_columns]
+
+        self.df_filtered.sort_values(
+            by=sort_by, ascending=ascending, inplace=True,
+            key=lambda col: col.str.lower() if col.dtype == object else col
+        )
+
+        self.df_filtered.reset_index(drop=True, inplace=True)
+        self.populate_table()
+
+    def populate_table(self):
+        self.table_widget.setRowCount(len(self.df_filtered))
+        for row in range(len(self.df_filtered)):
+            for col in range(len(self.df_filtered.columns)):
+                value = self.df_filtered.iloc[row, col]
+                if pd.isna(value):
+                    display_value = ''
+                else:
+                    if isinstance(value, pd.Timestamp):
+                        display_value = value.strftime("%d/%m/%Y %H:%M:%S")
+                    else:
+                        display_value = str(value)
+                item = QTableWidgetItem(display_value)
+
+                if self.df_filtered.columns[col] == 'SEQ':
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
+                if self.df_filtered.columns[col] == 'LOCALIZAÇÃO':
+                    location = display_value
+                    color_map = {
+                        'Unidade': '#17a2b8',
+                        'Escritório': '#ffc107',
+                        'Sobreaviso': '#fd7e14',
+                        'Folga': '#6c757d',
+                        'Home': '#20c997'
+                    }
+                    color = color_map.get(location, None)
+                    if color:
+                        item.setBackground(QColor(color))
+
+                self.table_widget.setItem(row, col, item)
+
+    def enable_editing(self):
+        self.table_widget.setEditTriggers(QTableWidget.AllEditTriggers)
+
+    def delete_entry(self):
+        selected_rows = self.table_widget.selectionModel().selectedRows()
+        if selected_rows:
+            selected_row = selected_rows[0].row()
+            self.table_widget.removeRow(selected_row)
+            self.df_filtered = self.df_filtered.drop(self.df_filtered.index[selected_row]).reset_index(drop=True)
+            QMessageBox.information(self, "Sucesso", "Entrada excluída com sucesso.")
+        else:
+            QMessageBox.warning(self, "Aviso", "Nenhuma linha selecionada para excluir.")
+
+    def save_changes(self):
+        # Atualizar o DataFrame filtrado com os valores da tabela
+        for row_index in range(self.table_widget.rowCount()):
+            for col_index in range(self.table_widget.columnCount()):
+                item = self.table_widget.item(row_index, col_index)
+                if item:
+                    column_name = self.df_filtered.columns[col_index]
+                    value = item.text()
+                    # Converter valor para o tipo de dado apropriado
+                    if value == '':
+                        if column_name in ['DATA/HORA INICIO', 'DATA/HORA FIM']:
+                            value = pd.NaT
+                        else:
+                            value = pd.NA
+                    else:
+                        if column_name in ['DATA/HORA INICIO', 'DATA/HORA FIM']:
+                            try:
+                                # Usar dayfirst=True para aceitar formatos DD/MM/AAAA
+                                value = pd.to_datetime(value, dayfirst=True, errors='raise')
+                            except ValueError:
+                                QMessageBox.warning(
+                                    self,
+                                    "Data/Hora Inválida",
+                                    f"Formato de data/hora inválido para {column_name} na linha {row_index + 1}. Por favor, use o formato DD/MM/AAAA HH:MM:SS."
+                                )
+                                value = self.df_filtered.iloc[row_index, col_index]
+                            except Exception as e:
+                                value = self.df_filtered.iloc[row_index, col_index]
+                        elif column_name == 'SEQ':
+                            try:
+                                value = int(value)
+                            except ValueError:
+                                QMessageBox.warning(self, "Valor Inválido", f"Valor inválido para SEQ na linha {row_index + 1}.")
+                                value = self.df_filtered.iloc[row_index, col_index]
+                        else:
+                            value = str(value)
+                    self.df_filtered.iloc[row_index, col_index] = value
+
+        # Identificar as SEQs que foram excluídas
+        # Primeiro, obter todas as SEQs do período no df_existing
+        start_date = pd.to_datetime(self.periodo_inicio.toString("dd/MM/yyyy"), dayfirst=True)
+        end_date = pd.to_datetime(self.periodo_fim.toString("dd/MM/yyyy"), dayfirst=True) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        df_existing_period = self.df_existing[
+            (self.df_existing['DATA/HORA INICIO'] >= start_date) &
+            (self.df_existing['DATA/HORA INICIO'] <= end_date)
+        ]
+        existing_seqs_in_period = set(df_existing_period['SEQ'])
+
+        # SEQs no df_filtered
+        filtered_seqs = set(self.df_filtered['SEQ'])
+
+        # SEQs a serem excluídas
+        seqs_to_delete = existing_seqs_in_period - filtered_seqs
+
+        # Remover entradas do df_existing com essas SEQs
+        if seqs_to_delete:
+            self.df_existing = self.df_existing[~self.df_existing['SEQ'].isin(seqs_to_delete)]
+
+        # Atualizar ou adicionar as entradas restantes
+        for idx in self.df_filtered.index:
+            seq = self.df_filtered.loc[idx, 'SEQ']
+            if pd.isna(seq):
+                max_seq = self.df_existing['SEQ'].max()
+                if pd.isna(max_seq):
+                    max_seq = 0
+                else:
+                    max_seq = int(max_seq)
+                seq = max_seq + 1
+                self.df_filtered.at[idx, 'SEQ'] = seq
+
+            if (self.df_existing['SEQ'] == seq).any():
+                for col in self.df_filtered.columns:
+                    if col != 'SEQ':
+                        self.df_existing.loc[self.df_existing['SEQ'] == seq, col] = self.df_filtered.loc[idx, col]
+            else:
+                self.df_existing = pd.concat([self.df_existing, self.df_filtered.loc[[idx]]], ignore_index=True)
+
+        # Garantir que as colunas de data/hora estejam no formato correto (mantendo como datetime)
+        for col in ['DATA/HORA INICIO', 'DATA/HORA FIM']:
+            self.df_existing[col] = pd.to_datetime(self.df_existing[col], errors='coerce')
+
+        try:
+            with pd.ExcelWriter(self.planilha_path, engine='openpyxl') as writer:
+                self.df_existing.to_excel(writer, index=False)
+
+            # Abrir o arquivo Excel com openpyxl para aplicar formatação
+            wb = load_workbook(self.planilha_path)
+            ws = wb.active
+
+            # Encontrar os índices das colunas 'DATA/HORA INICIO' e 'DATA/HORA FIM'
+            columns = {cell.value: idx+1 for idx, cell in enumerate(ws[1])}
+            inicio_col = columns.get('DATA/HORA INICIO')
+            fim_col = columns.get('DATA/HORA FIM')
+
+            # Definir o formato desejado
+            date_format = 'dd/mm/yyyy hh:mm:ss'
+
+            # Aplicar o formato na coluna 'DATA/HORA INICIO'
+            if inicio_col:
+                for cell in ws.iter_cols(min_col=inicio_col, max_col=inicio_col, min_row=2):
+                    for c in cell:
+                        c.number_format = date_format
+
+            # Aplicar o formato na coluna 'DATA/HORA FIM'
+            if fim_col:
+                for cell in ws.iter_cols(min_col=fim_col, max_col=fim_col, min_row=2):
+                    for c in cell:
+                        c.number_format = date_format
+
+            # Salvar as alterações no Excel
+            wb.save(self.planilha_path)
+
+            QMessageBox.information(self, "Sucesso", f"Alterações salvas com sucesso em {self.planilha_path}!")
+            self.table_widget.setEditTriggers(QTableWidget.NoEditTriggers)
+        except Exception as e:
+            QMessageBox.warning(self, "Erro", f"Falha ao salvar as alterações: {e}")
+
+        self.populate_table()
+
+    def send_emails(self):
+        tecnicos = list(self.df_filtered['TÉCNICO'].unique())
+        dialog = EmailSelectionDialog(tecnicos, self.periodo_inicio, self.periodo_fim)
+        if dialog.exec_() == QDialog.Accepted:
+            selected_tecnicos = dialog.selected_tecnicos
+            periodo_inicio = dialog.periodo_inicio
+            periodo_fim = dialog.periodo_fim
+
+            # Ler a planilha existente
+            try:
+                df_existing = pd.read_excel(self.planilha_path)
+                df_existing.columns = df_existing.columns.str.upper()
+            except FileNotFoundError:
+                QMessageBox.warning(self, "Erro", "A planilha selecionada não foi encontrada.")
+                return
+
+            # Verificar se há dados
+            if df_existing.empty:
+                QMessageBox.information(self, "Aviso", "Não há dados na planilha para enviar.")
+                return
+
+            # Converter a coluna 'DATA/HORA INICIO' para datetime
+            df_existing['DATA/HORA INICIO'] = pd.to_datetime(
+                df_existing['DATA/HORA INICIO'], format="%d/%m/%Y %H:%M:%S", errors='coerce'
+            )
+
+            # Filtrar pelo período selecionado
+            start_date = QDateTime(periodo_inicio, QTime(0, 0)).toPyDateTime()
+            end_date = QDateTime(periodo_fim, QTime(23, 59, 59)).toPyDateTime()
+            df_filtered = df_existing[
+                (df_existing['DATA/HORA INICIO'] >= start_date) &
+                (df_existing['DATA/HORA INICIO'] <= end_date) &
+                (df_existing['TÉCNICO'].isin(selected_tecnicos))
+            ]
+
+            if df_filtered.empty:
+                QMessageBox.information(self, "Aviso", "Não há registros para os técnicos e período selecionados.")
+                return
+
+            # Configurar a localidade para obter os dias da semana em português
+            try:
+                locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')  # Para sistemas Unix/Linux
+            except:
+                locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil.1252')  # Para Windows
+
+            # Envio de e-mails para os técnicos
+            grouped = df_filtered.groupby('TÉCNICO')
+
+            for tecnico, group in grouped:
+                email = technician_emails.get(tecnico)
+                if not email:
+                    QMessageBox.warning(self, "Aviso", f"E-mail do técnico {tecnico} não encontrado.")
+                    continue
+
+                # Construção da mensagem em HTML
+                message = f"""
+                <html>
+                    <body>
+                        <p>Prezado(a) <b>{tecnico}</b>,</p>
+                        <p>Segue sua escala:</p>
+                        <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse;">
+                            <tr>
+                                <th>DIA DA SEMANA</th>
+                                <th>DATA</th>
+                                <th>UNIDADE</th>
+                                <th>LOCALIZAÇÃO</th>
+                                <th>JUSTIFICATIVA</th>
+                                <th>CARD</th>
+                            </tr>
+                """
+
+                for idx, row in group.iterrows():
+                    dia_semana = row['DIA DA SEMANA'] if pd.notnull(row['DIA DA SEMANA']) else ''
+                    data_hora_inicio = row['DATA/HORA INICIO']
+                    data = data_hora_inicio.strftime('%d/%m/%Y') if pd.notnull(data_hora_inicio) else ''
+                    unidade = row['UNIDADE'] if pd.notnull(row['UNIDADE']) and row['UNIDADE'] else ''
+                    localizacao = row['LOCALIZAÇÃO'] if pd.notnull(row['LOCALIZAÇÃO']) and row['LOCALIZAÇÃO'] else ''
+                    justificativa = row['JUSTIFICATIVA'] if pd.notnull(row['JUSTIFICATIVA']) and row['JUSTIFICATIVA'] else ''
+                    card = row['CARD'] if pd.notnull(row['CARD']) and row['CARD'] else ''
+
+                    message += f"""
+                            <tr>
+                                <td>{dia_semana}</td>
+                                <td>{data}</td>
+                                <td>{unidade}</td>
+                                <td>{localizacao}</td>
+                                <td>{justificativa}</td>
+                                <td>{card}</td>
+                            </tr>
+                    """
+
+                message += """
+                        </table>
+                        <img src="cid:MinhaImagem" alt="Assinatura" />
+                    </body>
+                </html>
+                """
+
+                # Enviar e-mail imediatamente para o técnico usando a função global send_email
+                send_email(email, "Sua Escala", message)
+
+            # **Inserção da Caixa de Diálogo para Confirmar Envio aos Gestores**
+            reply = QMessageBox.question(
+                self,
+                'Enviar para Gestores',
+                'Deseja enviar e-mails para os gestores das unidades?',
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                # Envio agendado de e-mails para os gestores
+                df_units = df_filtered.copy()
+                df_units['DATA'] = df_units['DATA/HORA INICIO'].dt.date
+                unit_grouped = df_units.groupby(['UNIDADE', 'DATA'])
+
+                for (unidade, data_visita), group in unit_grouped:
+                    gestor_email = unit_manager_emails.get(unidade)
+                    if not gestor_email:
+                        QMessageBox.warning(self, "Aviso", f"E-mail do gestor da unidade {unidade} não encontrado.")
+                        continue
+
+                    # Lista de técnicos que estarão na unidade nesse dia
+                    tecnicos_na_unidade = group['TÉCNICO'].unique()
+                    tecnicos_lista = ', '.join(tecnicos_na_unidade)
+                    justificativa = group['JUSTIFICATIVA'].iloc[0] if not group.empty else ''
+
+                    # Extrair o horário da coluna DATA/HORA INICIO para enviar na mensagem
+                    data_inicio = group['DATA/HORA INICIO'].iloc[0]
+                    horario_visita = data_inicio.strftime('%H:%M')
+                    # Montar a mensagem
+                    mensagem_html = f"""
+                    <html>
+                        <body>
+                            <p>Prezado(a) Gestor(a),<br><br>
+                            Informamos que o(s) técnico(s) <b>{tecnicos_lista}</b> estará(ão) presente(s) na unidade <b>{unidade}</b> no dia {data_visita.strftime('%d/%m/%Y')} às {horario_visita}.<br>
+                            <br>
+                            Atenciosamente,<br>Sua Equipe
+                            <br><br>
+                            <img src="cid:MinhaImagem" alt="Assinatura" />
+                        </p>
+                    </body>
+                    </html>
+                    """
+                    # Agendar o envio para as 07:00 do dia da visita
+                    data_envio = datetime.datetime.combine(data_visita, datetime.time(7, 0))  # Alterado para 07:00
+
+                    # Criar e enviar o e-mail agendado usando a função global send_email
+                    try:
+                        send_email(gestor_email, f"Visita de Técnico - {data_visita.strftime('%d/%m/%Y')}", mensagem_html, send_time=data_envio)
+                    except Exception as e:
+                        QMessageBox.warning(self, "Erro", f"Falha ao agendar e-mail para {gestor_email}: {e}")
+
+                QMessageBox.information(self, "Sucesso", "E-mails enviados aos técnicos e gestores das unidades.")
+            else:
+                # Se o usuário escolher 'Não', apenas notificar o envio aos técnicos
+                QMessageBox.information(self, "Sucesso", "E-mails enviados apenas aos técnicos.")
+
+# Classe ScheduleForm para Gerenciamento de Escalas
 class ScheduleForm(QWidget):
     def __init__(self, planilha_path, periodo_inicio, periodo_fim):
         super().__init__()
@@ -576,7 +1117,7 @@ class ScheduleForm(QWidget):
                         self.combo_box_tecnico.setCurrentText(tecnico)
                         self.date_time_edit_inicio.setDate(current_date)
                         self.update_fields_based_on_tecnico()
-                        self.add_entry()
+                        self.add_entry()  # Adiciona a entrada
                     current_date = current_date.addDays(1)
 
     def add_entry(self):
@@ -585,6 +1126,7 @@ class ScheduleForm(QWidget):
         localizacao = self.combo_box_localizacao.currentText()
         unidade = self.combo_box_unidade.currentText()
         tecnico = self.combo_box_tecnico.currentText()
+        escala = self.escala_label.text()
         turno = self.combo_box_turno.currentText()
         data_hora_inicio = self.date_time_edit_inicio.dateTime()
         data_hora_fim = self.date_time_edit_fim.dateTime()
@@ -659,8 +1201,8 @@ class ScheduleForm(QWidget):
                     if tecnico_info:
                         # Adicionar folga na segunda-feira
                         folga_date = data_hora_inicio.addDays(1)
-                        horario_inicio = tecnico_info['horario_inicio']
-                        horario_fim = tecnico_info['horario_fim']
+                        horario_inicio = tecnico_info.get('horario_inicio', '00:00')
+                        horario_fim = tecnico_info.get('horario_fim', '00:00')
                         folga_inicio = QDateTime(folga_date.date(), QTime.fromString(horario_inicio, "HH:mm"))
                         folga_fim = QDateTime(folga_date.date(), QTime.fromString(horario_fim, "HH:mm"))
 
@@ -724,16 +1266,71 @@ class ScheduleForm(QWidget):
         localizacao_options = ["", "Folga", "Férias", "Sobreaviso", "Unidade", "Escritório", "Home"]
 
         # Definir as listas com os valores especificados
-        unidades = unidades = [ "AMA Zaio", "CRST Freguesia do Ó", "CRST Lapa", "CRST Leste", "CRST Mooca", "CRST Santo Amaro", "CRST Sé", "HD Brasilandia", "HM Alipio", "HM Benedicto", "HM Brasilandia", "HM Brigadeiro", "HM Cachoeirinha", "HM Campo Limpo", "H Cantareira", "HM Capela Do Socorro", "HM Hungria", "HM Ignacio", "HM Mario Degni", "HM Saboya",
-"HM Sorocabana", "HM Tatuape", "HM Tide", "HM Waldomiro", "HM Zaio", "PA Sao Mateus", "PSM Balneario Sao Jose", "PSM Lapa", "UPA Dona Maria Antonieta", "UPA Elisa Maria", "UPA Parelheiros", "UPA Pedreira", "UPA Peri", "UPA 21 de Junho", "UPA Santo Amaro",
-"UPA Parque Doroteia", "UPA 26 de Agosto", "UPA Campo Limpo", "UPA Tiradentes", "UPA City Jaragua", "UPA Ermelino Matarazzo", "UPA Carrao", "UPA Rio Pequeno", "UPA Jabaquara", "UPA Jacana", "UPA Jardim Angela", "UPA Julio Tupy", "UPA Mooca", "UPA Perus", "UPA Pirituba", "UPA Tatuape", "UPA Tito Lopes", "UPA Vera Cruz", "UPA Vergueiro", "UPA Vila Mariana",
-"UPA Vila Santa Catarina", "CAPS AD II Cachoeirinha", "CAPS AD II Cangaiba", "CAPS AD II Cidade Ademar", "CAPS AD II Ermelino Matarazzo", "CAPS AD II Guaianases", "CAPS AD II Jabaquara", "CAPS AD II Jardim Nelia", "CAPS AD II Mooca", "CAPS AD II Pinheiros", "CAPS AD II Sacoma", "CAPS AD II Santo Amaro", "CAPS AD II Sapopemba", "CAPS AD II Vila Madalena Prosam", "CAPS AD II Vila Mariana", "CAPS AD III Armenia", "CAPS AD III Boracea", "CAPS AD III Butanta", "CAPS AD III Campo Limpo", "CAPS AD III Capela Do Socorro",
-"CAPS AD III Centro", "CAPS AD III Complexo Prates", "CAPS AD III Freguesia Do O Brasilandia", "CAPS AD III Grajau", "CAPS AD III Heliopolis", "CAPS AD III Itaquera", "CAPS AD III Jardim Angela", "CAPS AD III Jardim Sao Luiz", "CAPS AD III Leopoldina", "CAPS AD III Paraisopolis", "CAPS AD III Penha", "CAPS AD III Pirituba Casa Azul", "CAPS AD III Santana", "CAPS AD III Sao Mateus Liberdade De Escolha", "CAPS AD III Sao Miguel", "CAPS AD IV Redencao", "CAPS Adulto II Aricanduva Formosa", "CAPS Adulto II Butanta", "CAPS Adulto II Casa Verde", "CAPS Adulto II Cidade Ademar",
-"CAPS Adulto II Cidade Tiradentes", "CAPS Adulto II Ermelino Matarazzo", "CAPS Adulto II Guaianases Artur Bispo Do Rosario", "CAPS Adulto II Itaim Paulista", "CAPS Adulto II Itaquera", "CAPS Adulto II Jardim Lidia", "CAPS Adulto II Jabaquara", "CAPS Adulto II Jacana Dr Leonidio Galvao Dos Santos", "CAPS Adulto II Perdizes Manoel Munhoz", "CAPS Adulto II Perus", "CAPS Adulto II Sao Miguel", "CAPS Adulto II V Monumento", "CAPS Adulto II Vila Prudente", "CAPS Adulto III Capela Do Socorro", "CAPS Adulto III Freguesia Do O Brasilandia", "CAPS Adulto III Grajau", "CAPS Adulto III Itaim Bibi", "CAPS Adulto III Jardim Sao Luiz", "CAPS Adulto III Lapa", "CAPS Adulto III Largo 13",
-"CAPS Adulto III M Boi Mirim", "CAPS Adulto III Mandaqui", "CAPS Adulto III Mooca", "CAPS Adulto III Paraisopolis", "CAPS Adulto III Parelheiros", "CAPS Adulto III Pirituba Jaragua", "CAPS Adulto III Sao Mateus", "CAPS Adulto III Sapopemba", "CAPS Adulto III Se", "CAPS Adulto III Vila Matilde", "CAPS IJ II Pirituba Jaragua", "CAPS IJ II Vila Mariana Quixote", "CAPS IJ II Butanta", "CAPS IJ II Campo Limpo", "CAPS IJ II Capela Do Socorro Piracao", "CAPS IJ II Casa Verde Nise Da Silveira", "CAPS IJ II Cidade Ademar", "CAPS IJ II Cidade Lider", "CAPS IJ II Cidade Tiradentes", "CAPS IJ II Ermelino Matarazzo",
-"CAPS IJ II Freguesia Do O Brasilandia", "CAPS IJ II Guaianases Coloridamente", "CAPS IJ II Ipiranga", "CAPS IJ II Itaim Paulista", "CAPS IJ II Itaquera", "CAPS IJ II Jabaquara Casinha", "CAPS IJ II Lapa", "CAPS IJ II M Boi Mirim", "CAPS IJ II Mooca", "CAPS IJ II Parelheiros Aquarela", "CAPS IJ II Perus", "CAPS IJ II Santo Amaro", "CAPS IJ II Sao Mateus", "CAPS IJ II Sapopemba", "CAPS IJ II Vila Maria Vila Guilherme", "CAPS IJ II Vila Prudente", "CAPS IJ III Aricanduva", "CAPS IJ III Cidade Dutra", "CAPS IJ III Heliopolis", "CAPS IJ III Jardim Sao Luiz",
-"CAPS IJ III Penha", "CAPS IJ III Santana", "CAPS IJ III Sao Miguel"
-]
+        unidades = [ 
+            "AMA Zaio", "CRST Freguesia do Ó", "CRST Lapa", "CRST Leste", "CRST Mooca", 
+            "CRST Santo Amaro", "CRST Sé", "HD Brasilandia", "HM Alipio", "HM Benedicto", 
+            "HM Brasilandia", "HM Brigadeiro", "HM Cachoeirinha", "HM Campo Limpo", 
+            "H Cantareira", "HM Capela Do Socorro", "HM Hungria", "HM Ignacio", 
+            "HM Mario Degni", "HM Saboya", "HM Sorocabana", "HM Tatuape", "HM Tide", 
+            "HM Waldomiro", "HM Zaio", "PA Sao Mateus", "PSM Balneario Sao Jose", 
+            "PSM Lapa", "UPA Dona Maria Antonieta", "UPA Elisa Maria", "UPA Parelheiros", 
+            "UPA Pedreira", "UPA Peri", "UPA 21 de Junho", "UPA Santo Amaro",
+            "UPA Parque Doroteia", "UPA 26 de Agosto", "UPA Campo Limpo", 
+            "UPA Tiradentes", "UPA City Jaragua", "UPA Ermelino Matarazzo", "UPA Carrao", 
+            "UPA Rio Pequeno", "UPA Jabaquara", "UPA Jardim Angela", 
+            "UPA Julio Tupy", "UPA Mooca", "UPA Perus", "UPA Pirituba", "UPA Tatuape", 
+            "UPA Tito Lopes", "UPA Vera Cruz", "UPA Vergueiro", "UPA Vila Mariana",
+            "UPA Vila Santa Catarina", "CAPS AD II Cachoeirinha", "CAPS AD II Cangaiba", 
+            "CAPS AD II Cidade Ademar", "CAPS AD II Ermelino Matarazzo", "CAPS AD II Guaianases", 
+            "CAPS AD II Jabaquara", "CAPS AD II Jardim Nelia", "CAPS AD II Mooca", 
+            "CAPS AD II Pinheiros", "CAPS AD II Sacoma", "CAPS AD II Santo Amaro", 
+            "CAPS AD II Sapopemba", "CAPS AD II Vila Madalena Prosam", "CAPS AD II Vila Mariana", 
+            "CAPS AD III Armenia", "CAPS AD III Boracea", "CAPS AD III Butanta", 
+            "CAPS AD III Campo Limpo", "CAPS AD III Capela Do Socorro",
+            "CAPS AD III Centro", "CAPS AD III Complexo Prates", 
+            "CAPS AD III Freguesia Do O Brasilandia", "CAPS AD III Grajau", 
+            "CAPS AD III Heliopolis", "CAPS AD III Itaquera", "CAPS AD III Jardim Angela", 
+            "CAPS AD III Jardim Sao Luiz", "CAPS AD III Leopoldina", 
+            "CAPS AD III Paraisopolis", "CAPS AD III Penha", "CAPS AD III Pirituba Casa Azul", 
+            "CAPS AD III Santana", "CAPS AD III Sao Mateus Liberdade De Escolha", 
+            "CAPS AD III Sao Miguel", "CAPS AD IV Redencao", 
+            "CAPS Adulto II Aricanduva Formosa", "CAPS Adulto II Butanta", 
+            "CAPS Adulto II Casa Verde", "CAPS Adulto II Cidade Ademar",
+            "CAPS Adulto II Cidade Tiradentes", "CAPS Adulto II Ermelino Matarazzo", 
+            "CAPS Adulto II Guaianases Artur Bispo Do Rosario", 
+            "CAPS Adulto II Itaim Paulista", "CAPS Adulto II Itaquera", 
+            "CAPS Adulto II Jardim Lidia", "CAPS Adulto II Jabaquara Casinha", 
+            "CAPS Adulto II Jacana Dr Leonidio Galvao Dos Santos", 
+            "CAPS Adulto II Perdizes Manoel Munhoz", "CAPS Adulto II Perus", 
+            "CAPS Adulto II Sao Miguel", "CAPS Adulto II V Monumento", 
+            "CAPS Adulto II Vila Prudente", "CAPS Adulto III Capela Do Socorro", 
+            "CAPS Adulto III Freguesia Do O Brasilandia", "CAPS Adulto III Grajau", 
+            "CAPS Adulto III Itaim Bibi", "CAPS Adulto III Jardim Sao Luiz", 
+            "CAPS Adulto III Lapa", "CAPS Adulto III Largo 13",
+            "CAPS Adulto III M Boi Mirim", "CAPS Adulto III Mandaqui", 
+            "CAPS Adulto III Mooca", "CAPS Adulto III Paraisopolis", 
+            "CAPS Adulto III Parelheiros", "CAPS Adulto III Pirituba Jaragua", 
+            "CAPS Adulto III Sao Mateus", "CAPS Adulto III Sapopemba", 
+            "CAPS Adulto III Se", "CAPS Adulto III Vila Matilde",
+            "CAPS IJ II Pirituba Jaragua", "CAPS IJ II Vila Mariana Quixote", 
+            "CAPS IJ II Butanta", "CAPS IJ II Campo Limpo", 
+            "CAPS IJ II Capela Do Socorro Piracao", 
+            "CAPS IJ II Casa Verde Nise Da Silveira", "CAPS IJ II Cidade Ademar", 
+            "CAPS IJ II Cidade Lider", "CAPS IJ II Cidade Tiradentes", 
+            "CAPS IJ II Ermelino Matarazzo", "CAPS IJ II Freguesia Do O Brasilandia", 
+            "CAPS IJ II Guaianases Coloridamente", "CAPS IJ II Ipiranga", 
+            "CAPS IJ II Itaim Paulista", "CAPS IJ II Itaquera", 
+            "CAPS IJ II Jabaquara Casinha", "CAPS IJ II Lapa", 
+            "CAPS IJ II M Boi Mirim", "CAPS IJ II Mooca", 
+            "CAPS IJ II Parelheiros Aquarela", "CAPS IJ II Perus", 
+            "CAPS IJ II Santo Amaro", "CAPS IJ II Sao Mateus", 
+            "CAPS IJ II Sapopemba", "CAPS IJ II Vila Maria Vila Guilherme", 
+            "CAPS IJ II Vila Prudente", "CAPS IJ III Aricanduva", 
+            "CAPS IJ III Cidade Dutra", "CAPS IJ III Heliopolis", 
+            "CAPS IJ III Jardim Sao Luiz",
+            "CAPS IJ III Penha", "CAPS IJ III Santana", 
+            "CAPS IJ III Sao Miguel"
+        ]
         tecnicos = list(self.technician_schedules.keys())
         turnos = ["Diurno", "Noturno"]
 
@@ -912,9 +1509,9 @@ class ScheduleForm(QWidget):
             QHeaderView::section {
                 background-color: qlineargradient(
                     spread:pad, x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #007bff, stop:1 #6610f2
+                    stop:0 #6959CD, stop:1 #FFFFFF
                 );
-                color: white;
+                color: black;
                 font-weight: bold;
                 border: none;
                 font-size: 15px;
@@ -973,7 +1570,7 @@ class ScheduleForm(QWidget):
         # Armazenar dados originais
         self.original_data = []
 
-        # Adicionar botões de EDITAR, EXCLUIR e FINALIZAR ESCALA (sem o botão "Adicionar")
+        # Adicionar botões de EDITAR, EXCLUIR e FINALIZAR ESCALA
         buttons_layout = QHBoxLayout()
 
         # Layout para os botões à esquerda
@@ -1048,14 +1645,13 @@ class ScheduleForm(QWidget):
         # Estilizar o layout principal
         self.setStyleSheet("""
             QWidget {
-                background-color: #f8f9fa;
+                background-color: #f0f0f0;
             }
             QPushButton {
                 font-size: 14px;
                 font-family: 'Segoe UI', sans-serif;
             }
         """)
-
         self.setLayout(main_layout)
         self.setWindowTitle('Saints V')
         self.resize(1200, 600)
@@ -1064,7 +1660,7 @@ class ScheduleForm(QWidget):
     def get_primary_button_style(self):
         return """
             QPushButton {
-                background-color: #007bff;
+                background-color: #6959CD;
                 color: white;
                 border-radius: 5px;
                 padding: 8px 16px;
@@ -1078,7 +1674,7 @@ class ScheduleForm(QWidget):
     def get_success_button_style(self):
         return """
             QPushButton {
-                background-color: #28a745;
+                background-color: #6959CD;
                 color: white;
                 border-radius: 5px;
                 padding: 8px 16px;
@@ -1092,8 +1688,8 @@ class ScheduleForm(QWidget):
     def get_warning_button_style(self):
         return """
             QPushButton {
-                background-color: #ffc107;
-                color: #212529;
+                background-color: #6959CD;
+                color: white;
                 border-radius: 5px;
                 padding: 8px 16px;
                 font-size: 14px;
@@ -1106,7 +1702,7 @@ class ScheduleForm(QWidget):
     def get_danger_button_style(self):
         return """
             QPushButton {
-                background-color: #dc3545;
+                background-color: #6959CD;
                 color: white;
                 border-radius: 5px;
                 padding: 8px 16px;
@@ -1424,15 +2020,15 @@ class ScheduleForm(QWidget):
             # Definir horários de Sobreaviso
             sobreaviso_info = tecnico_info.get('sobreaviso', {})
             if unidade_preenchida:
-                horario_inicio = sobreaviso_info.get('horario_com_unidade', {}).get('inicio', tecnico_info['horario_inicio'])
-                horario_fim = sobreaviso_info.get('horario_com_unidade', {}).get('fim', tecnico_info['horario_fim'])
+                horario_inicio = sobreaviso_info.get('horario_com_unidade', {}).get('inicio', tecnico_info.get('horario_inicio', '00:00'))
+                horario_fim = sobreaviso_info.get('horario_com_unidade', {}).get('fim', tecnico_info.get('horario_fim', '00:00'))
             else:
-                horario_inicio = sobreaviso_info.get('horario_sem_unidade', {}).get('inicio', tecnico_info['horario_inicio'])
-                horario_fim = sobreaviso_info.get('horario_sem_unidade', {}).get('fim', tecnico_info['horario_fim'])
+                horario_inicio = sobreaviso_info.get('horario_sem_unidade', {}).get('inicio', tecnico_info.get('horario_inicio', '00:00'))
+                horario_fim = sobreaviso_info.get('horario_sem_unidade', {}).get('fim', tecnico_info.get('horario_fim', '00:00'))
         else:
             # Usar horários normais
-            horario_inicio = tecnico_info['horario_inicio']
-            horario_fim = tecnico_info['horario_fim']
+            horario_inicio = tecnico_info.get('horario_inicio', '00:00')
+            horario_fim = tecnico_info.get('horario_fim', '00:00')
 
         # Montar datetime inicio e fim
         datetime_inicio_str = f"{selected_date.toString('dd/MM/yyyy')} {horario_inicio}"
@@ -1482,12 +2078,12 @@ class ScheduleForm(QWidget):
         if selected_localizacao in ["Folga", "Férias"]:
             self.combo_box_unidade.setDisabled(True)
             self.combo_box_unidade.setStyleSheet(
-                self.combo_box_unidade.styleSheet() + "background-color: #e9ecef;"
+                self.combo_box_unidade.styleSheet() + "background-color: #FFD700;"
             )
         else:
             self.combo_box_unidade.setDisabled(False)
             self.combo_box_unidade.setStyleSheet(
-                self.combo_box_unidade.styleSheet().replace("background-color: #e9ecef;", "") +
+                self.combo_box_unidade.styleSheet().replace("background-color: #FFD700;", "") +
                 "background-color: #fff;"
             )
 
@@ -1497,34 +2093,7 @@ class ScheduleForm(QWidget):
         else:
             super().keyPressEvent(event)
 
-    # Método para enviar e-mails usando Outlook (ajustado)
-    def send_email(self, to_email, subject, body, send_time=None):
-        try:
-            outlook = win32com.client.Dispatch('outlook.application')
-            mail = outlook.CreateItem(0)
-            mail.To = to_email
-            mail.Subject = subject
-            mail.Body = body
-
-            if send_time:
-                # Verifica se o horário agendado já passou
-                if send_time <= datetime.datetime.now():
-                    # Se o horário já passou, envia imediatamente
-                    pass  # Não define DeferredDeliveryTime
-                else:
-                    # Se o horário está no futuro, agenda o envio
-                    mail.DeferredDeliveryTime = send_time
-            # Envia o e-mail
-            mail.Send()
-
-            # Força o envio/recebimento para garantir que o e-mail saia da caixa de saída
-            namespace = outlook.GetNamespace("MAPI")
-            namespace.SendAndReceive(False)
-
-        except Exception as e:
-            QMessageBox.warning(self, "Erro", f"Falha ao enviar e-mail para {to_email}: {e}")
-
-    # Método para enviar e-mails para os técnicos selecionados
+    # Método para enviar e-mails para os técnicos e gestores
     def send_emails(self):
         tecnicos = list(self.technician_schedules.keys())
         dialog = EmailSelectionDialog(tecnicos, self.periodo_inicio, self.periodo_fim)
@@ -1579,496 +2148,112 @@ class ScheduleForm(QWidget):
                     QMessageBox.warning(self, "Aviso", f"E-mail do técnico {tecnico} não encontrado.")
                     continue
 
-                message = f"Prezado(a) {tecnico},\n\nSegue sua escala:\n\n"
+                # Construção da mensagem em HTML
+                message = f"""
+                <html>
+                    <body>
+                        <p>Prezado(a) <b>{tecnico}</b>,</p>
+                        <p>Segue sua escala:</p>
+                        <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse;">
+                            <tr>
+                                <th>DIA DA SEMANA</th>
+                                <th>DATA</th>
+                                <th>UNIDADE</th>
+                                <th>LOCALIZAÇÃO</th>
+                                <th>JUSTIFICATIVA</th>
+                                <th>CARD</th>
+                            </tr>
+                """
+
                 for idx, row in group.iterrows():
                     dia_semana = row['DIA DA SEMANA'] if pd.notnull(row['DIA DA SEMANA']) else ''
                     data_hora_inicio = row['DATA/HORA INICIO']
                     data = data_hora_inicio.strftime('%d/%m/%Y') if pd.notnull(data_hora_inicio) else ''
                     unidade = row['UNIDADE'] if pd.notnull(row['UNIDADE']) and row['UNIDADE'] else ''
+                    localizacao = row['LOCALIZAÇÃO'] if pd.notnull(row['LOCALIZAÇÃO']) and row['LOCALIZAÇÃO'] else ''
                     justificativa = row['JUSTIFICATIVA'] if pd.notnull(row['JUSTIFICATIVA']) and row['JUSTIFICATIVA'] else ''
                     card = row['CARD'] if pd.notnull(row['CARD']) and row['CARD'] else ''
 
-                    # Ajuste realizado aqui
-                    entry_message = ''
-                    if dia_semana:
-                        entry_message += f"Dia da Semana: {dia_semana}\n"
-                    if data:
-                        entry_message += f"Data: {data}\n"
-                    if unidade:
-                        entry_message += f"Unidade: {unidade}\n"
-                    elif pd.notnull(row['LOCALIZAÇÃO']) and row['LOCALIZAÇÃO']:
-                        localizacao = row['LOCALIZAÇÃO']
-                        entry_message += f"Localização: {localizacao}\n"
-                    if justificativa:
-                        entry_message += f"Justificativa: {justificativa}\n"
-                    if card:
-                        entry_message += f"Card: {card}\n"
+                    message += f"""
+                            <tr>
+                                <td>{dia_semana}</td>
+                                <td>{data}</td>
+                                <td>{unidade}</td>
+                                <td>{localizacao}</td>
+                                <td>{justificativa}</td>
+                                <td>{card}</td>
+                            </tr>
+                    """
 
-                    message += entry_message + '\n'  # Adiciona uma linha em branco entre as entradas
+                message += """
+                        </table>
+                        <br>
+                        <img src="cid:MinhaImagem" alt="Assinatura" />
+                    </body>
+                </html>
+                """
 
-                message += "Atenciosamente,\nSua Equipe"
+                # Enviar e-mail imediatamente para o técnico usando a função global send_email
+                send_email(email, "Escala Semanal", message) #Assunto do email tecnicos
 
-                self.send_email(email, "Sua Escala", message)
-
-            # Envio agendado de e-mails para os gestores
-            df_units = df_filtered.copy()
-            df_units['DATA'] = df_units['DATA/HORA INICIO'].dt.date
-            unit_grouped = df_units.groupby(['UNIDADE', 'DATA'])
-
-            for (unidade, data_visita), group in unit_grouped:
-                gestor_email = unit_manager_emails.get(unidade)
-                if not gestor_email:
-                    QMessageBox.warning(self, "Aviso", f"E-mail do gestor da unidade {unidade} não encontrado.")
-                    continue
-
-                # Lista de técnicos que estarão na unidade nesse dia
-                tecnicos_na_unidade = group['TÉCNICO'].unique()
-                tecnicos_lista = ', '.join(tecnicos_na_unidade)
-
-                # Montar a mensagem
-                mensagem = f"Prezado(a) Gestor(a),\n\nInformamos que o(s) técnico(s) {tecnicos_lista} estará(ão) presente(s) na unidade {unidade} no dia {data_visita.strftime('%d/%m/%Y')}.\n\nAtenciosamente,\nSua Equipe"
-
-                # Agendar o envio para as 14:25 do dia da visita
-                data_envio = datetime.datetime.combine(data_visita, datetime.time(14, 25))
-
-                # Criar e enviar o e-mail agendado
-                try:
-                    self.send_email(gestor_email, f"Visita de Técnico - {data_visita.strftime('%d/%m/%Y')}", mensagem, send_time=data_envio)
-                except Exception as e:
-                    QMessageBox.warning(self, "Erro", f"Falha ao agendar e-mail para {gestor_email}: {e}")
-
-            QMessageBox.information(self, "Sucesso", "E-mails enviados aos técnicos.")
-
-# Classe ConsultaEscalaDialog
-class ConsultaEscalaDialog(QDialog):
-    def __init__(self, df_filtered, planilha_path, df_existing, periodo_inicio, periodo_fim, labels):
-        super().__init__()
-        self.setWindowIcon(QIcon('JT.ico'))
-        self.df_filtered = df_filtered.copy()
-        self.planilha_path = planilha_path
-        self.df_existing = df_existing.copy()
-        self.periodo_inicio = periodo_inicio
-        self.periodo_fim = periodo_fim
-        self.labels = labels  # Inclui 'SEQ' agora
-        self.sort_columns = []  # Lista de colunas de ordenação
-        self.init_ui()
-
-    def init_ui(self):
-        self.setWindowTitle("Consulta de Escala")
-        self.showMaximized()
-        layout = QVBoxLayout()
-
-        # Reordenar as colunas
-        self.df_filtered = self.df_filtered[self.labels]
-
-        # Converter colunas de data/hora para datetime
-        for col in ['DATA/HORA INICIO', 'DATA/HORA FIM']:
-            self.df_filtered[col] = pd.to_datetime(
-                self.df_filtered[col], format="%d/%m/%Y %H:%M:%S", errors='coerce'
+            # **Inserção da Caixa de Diálogo para Confirmar Envio aos Gestores**
+            reply = QMessageBox.question(
+                self,
+                'Enviar para Gestores',
+                'Deseja enviar e-mails para os gestores das unidades?',
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
             )
 
-        # Tabela para exibir os dados
-        self.table_widget = QTableWidget()
-        self.table_widget.setRowCount(len(self.df_filtered))
-        self.table_widget.setColumnCount(len(self.df_filtered.columns))
-        self.table_widget.setHorizontalHeaderLabels(self.df_filtered.columns.tolist())
-        self.table_widget.horizontalHeader().setStretchLastSection(True)
-        # Ajustar o tamanho das seções para que os títulos sejam completamente visíveis
-        self.table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.table_widget.horizontalHeader().setMinimumSectionSize(100)
-        self.table_widget.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table_widget.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.table_widget.setStyleSheet("""
-            QTableWidget {
-                font-size: 14px;
-                font-family: 'Segoe UI', sans-serif;
-            }
-            QTableWidget::item:selected {
-                background-color: #007bff;
-                color: #fff;
-            }
-            QHeaderView::section {
-                background-color: #343a40;
-                color: white;
-                font-weight: bold;
-                font-size: 14px;
-                height: 30px;
-            }
-        """)
+            if reply == QMessageBox.Yes:
+                # Envio agendado de e-mails para os gestores
+                df_units = df_filtered.copy()
+                df_units['DATA'] = df_units['DATA/HORA INICIO'].dt.date
+                unit_grouped = df_units.groupby(['UNIDADE', 'DATA'])
 
-        # Habilitar a ordenação nos cabeçalhos
-        self.table_widget.horizontalHeader().setSectionsClickable(True)
-        self.table_widget.horizontalHeader().setSortIndicatorShown(True)
-        self.table_widget.horizontalHeader().sectionClicked.connect(self.handle_header_click)
+                for (unidade, data_visita), group in unit_grouped:
+                    gestor_email = unit_manager_emails.get(unidade)
+                    if not gestor_email:
+                        QMessageBox.warning(self, "Aviso", f"E-mail do gestor da unidade {unidade} não encontrado.")
+                        continue
 
-        # Preencher a tabela com os dados
-        self.populate_table()
+                    # Lista de técnicos que estarão na unidade nesse dia
+                    tecnicos_na_unidade = group['TÉCNICO'].unique()
+                    tecnicos_lista = ', '.join(tecnicos_na_unidade)
+                    justificativa = group['JUSTIFICATIVA'].iloc[0] if not group.empty else ''
 
-        layout.addWidget(self.table_widget)
+                    # Extrair o horário da coluna DATA/HORA INICIO para enviar na mensagem
+                    data_inicio = group['DATA/HORA INICIO'].iloc[0]
+                    horario_visita = data_inicio.strftime('%H:%M')
 
-        # Botões de editar, excluir, salvar e enviar escala
-        buttons_layout = QHBoxLayout()
-        buttons_layout.addStretch()
+                    # Montar a mensagem
+                    mensagem = f"""
+                    <html>
+                        <body>
+                            <p>Prezado(a) Gestor(a)/PTA,<br><br>
+                            Hoje foi agendada a visita do técnico <b>{tecnicos_lista}</b> da Liberty Health para <b>apoio e acompanhamento na utilização do SGHX</b>
+                            na unidade <b>{unidade}</b> a partir das {horario_visita} do dia {data_visita.strftime('%d/%m/%Y')}.<br><br>
+                            <br><br>
+                            <img src="cid:MinhaImagem" alt="Assinatura" />
+                            </p>
+                        </body>
+                    </html>
+                    """
+                    # Agendar o envio para as 07:00 do dia da visita
+                    data_envio = datetime.datetime.combine(data_visita, datetime.time(7, 0))  # Alterado para 07:00
 
-        self.edit_button = QPushButton(" Editar")
-        self.edit_button.setFixedSize(140, 40)
-        self.edit_button.setIcon(QIcon("icons/edit.png"))
-        self.edit_button.setStyleSheet(self.get_warning_button_style())
-        self.edit_button.clicked.connect(self.enable_editing)
-        buttons_layout.addWidget(self.edit_button)
+                    # Criar e enviar o e-mail agendado usando a função global send_email
+                    try:
+                        send_email(gestor_email, f"Visita Técnica - {data_visita.strftime('%d/%m/%Y')}", mensagem, send_time=data_envio)
+                    except Exception as e:
+                        QMessageBox.warning(self, "Erro", f"Falha ao agendar e-mail para {gestor_email}: {e}")
 
-        self.delete_button = QPushButton(" Excluir")
-        self.delete_button.setFixedSize(140, 40)
-        self.delete_button.setIcon(QIcon("icons/delete.png"))
-        self.delete_button.setStyleSheet(self.get_danger_button_style())
-        self.delete_button.clicked.connect(self.delete_entry)
-        buttons_layout.addWidget(self.delete_button)
-
-        self.save_button = QPushButton(" Salvar Alterações")
-        self.save_button.setFixedSize(180, 40)
-        self.save_button.setIcon(QIcon("icons/save.png"))
-        self.save_button.setStyleSheet(self.get_primary_button_style())
-        self.save_button.clicked.connect(self.save_changes)
-        buttons_layout.addWidget(self.save_button)
-
-        # Botão para Enviar E-mails
-        self.send_email_button = QPushButton(" Enviar Escala")
-        self.send_email_button.setFixedSize(180, 40)
-        self.send_email_button.setIcon(QIcon("icons/email.png"))
-        self.send_email_button.setStyleSheet(self.get_primary_button_style())
-        self.send_email_button.clicked.connect(self.send_emails)
-        buttons_layout.addWidget(self.send_email_button)
-
-        layout.addLayout(buttons_layout)
-        self.setLayout(layout)
-
-    def get_primary_button_style(self):
-        return """
-            QPushButton {
-                background-color: #007bff;
-                color: white;
-                border-radius: 5px;
-                padding: 8px 16px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #0056b3;
-            }
-        """
-
-    def get_warning_button_style(self):
-        return """
-            QPushButton {
-                background-color: #ffc107;
-                color: #212529;
-                border-radius: 5px;
-                padding: 8px 16px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #e0a800;
-            }
-        """
-
-    def get_danger_button_style(self):
-        return """
-            QPushButton {
-                background-color: #dc3545;
-                color: white;
-                border-radius: 5px;
-                padding: 8px 16px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #bd2130;
-            }
-        """
-
-    def handle_header_click(self, logicalIndex):
-        column_name = self.df_filtered.columns[logicalIndex]
-        existing = next((item for item in self.sort_columns if item[0] == column_name), None)
-        if existing:
-            self.sort_columns.remove(existing)
-            ascending = not existing[1]
-        else:
-            ascending = True
-
-        self.sort_columns.insert(0, (column_name, ascending))
-        order = Qt.AscendingOrder if ascending else Qt.DescendingOrder
-        self.table_widget.horizontalHeader().setSortIndicator(logicalIndex, order)
-        self.sort_table()
-
-    def sort_table(self):
-        if not self.sort_columns:
-            return
-
-        sort_by = [col for col, asc in self.sort_columns]
-        ascending = [asc for col, asc in self.sort_columns]
-
-        self.df_filtered.sort_values(
-            by=sort_by, ascending=ascending, inplace=True,
-            key=lambda col: col.str.lower() if col.dtype == object else col
-        )
-
-        self.df_filtered.reset_index(drop=True, inplace=True)
-        self.populate_table()
-
-    def populate_table(self):
-        self.table_widget.setRowCount(len(self.df_filtered))
-        for row in range(len(self.df_filtered)):
-            for col in range(len(self.df_filtered.columns)):
-                value = self.df_filtered.iloc[row, col]
-                if pd.isna(value):
-                    display_value = ''
-                else:
-                    if isinstance(value, pd.Timestamp):
-                        display_value = value.strftime("%d/%m/%Y %H:%M:%S")
-                    else:
-                        display_value = str(value)
-                item = QTableWidgetItem(display_value)
-
-                if self.df_filtered.columns[col] == 'SEQ':
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-
-                if self.df_filtered.columns[col] == 'LOCALIZAÇÃO':
-                    location = display_value
-                    color_map = {
-                        'Unidade': '#17a2b8',
-                        'Escritório': '#ffc107',
-                        'Sobreaviso': '#fd7e14',
-                        'Folga': '#6c757d',
-                        'Home': '#20c997'
-                    }
-                    color = color_map.get(location, None)
-                    if color:
-                        item.setBackground(QColor(color))
-
-                self.table_widget.setItem(row, col, item)
-
-    def enable_editing(self):
-        self.table_widget.setEditTriggers(QTableWidget.AllEditTriggers)
-
-    def delete_entry(self):
-        selected_rows = self.table_widget.selectionModel().selectedRows()
-        if selected_rows:
-            selected_row = selected_rows[0].row()
-            self.table_widget.removeRow(selected_row)
-            self.df_filtered = self.df_filtered.drop(self.df_filtered.index[selected_row]).reset_index(drop=True)
-            QMessageBox.information(self, "Sucesso", "Entrada excluída com sucesso.")
-        else:
-            QMessageBox.warning(self, "Aviso", "Nenhuma linha selecionada para excluir.")
-
-    def save_changes(self):
-        # Atualizar o DataFrame filtrado com os valores da tabela
-        for row_index in range(self.table_widget.rowCount()):
-            for col_index in range(self.table_widget.columnCount()):
-                item = self.table_widget.item(row_index, col_index)
-                if item:
-                    column_name = self.df_filtered.columns[col_index]
-                    value = item.text()
-                    # Converter valor para o tipo de dado apropriado
-                    if value == '':
-                        if column_name in ['DATA/HORA INICIO', 'DATA/HORA FIM']:
-                            value = pd.NaT
-                        else:
-                            value = pd.NA
-                    else:
-                        if column_name in ['DATA/HORA INICIO', 'DATA/HORA FIM']:
-                            try:
-                                # Usar dayfirst=True para aceitar formatos DD/MM/AAAA
-                                value = pd.to_datetime(value, dayfirst=True, errors='raise')
-                            except ValueError:
-                                QMessageBox.warning(
-                                    self,
-                                    "Data/Hora Inválida",
-                                    f"Formato de data/hora inválido para {column_name} na linha {row_index + 1}. Por favor, use o formato DD/MM/AAAA HH:MM:SS."
-                                )
-                                value = self.df_filtered.iloc[row_index, col_index]
-                            except Exception as e:
-                                value = self.df_filtered.iloc[row_index, col_index]
-                        elif column_name == 'SEQ':
-                            try:
-                                value = int(value)
-                            except ValueError:
-                                QMessageBox.warning(self, "Valor Inválido", f"Valor inválido para SEQ na linha {row_index + 1}.")
-                                value = self.df_filtered.iloc[row_index, col_index]
-                        else:
-                            value = str(value)
-                    self.df_filtered.iloc[row_index, col_index] = value
-
-        # Identificar as SEQs que foram excluídas
-        # Primeiro, obter todas as SEQs do período no df_existing
-        start_date = pd.to_datetime(self.periodo_inicio.toString("dd/MM/yyyy"), dayfirst=True)
-        end_date = pd.to_datetime(self.periodo_fim.toString("dd/MM/yyyy"), dayfirst=True) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-        df_existing_period = self.df_existing[
-            (self.df_existing['DATA/HORA INICIO'] >= start_date) &
-            (self.df_existing['DATA/HORA INICIO'] <= end_date)
-        ]
-        existing_seqs_in_period = set(df_existing_period['SEQ'])
-
-        # SEQs no df_filtered
-        filtered_seqs = set(self.df_filtered['SEQ'])
-
-        # SEQs a serem excluídas
-        seqs_to_delete = existing_seqs_in_period - filtered_seqs
-
-        # Remover entradas do df_existing com essas SEQs
-        if seqs_to_delete:
-            self.df_existing = self.df_existing[~self.df_existing['SEQ'].isin(seqs_to_delete)]
-
-        # Atualizar ou adicionar as entradas restantes
-        for idx in self.df_filtered.index:
-            seq = self.df_filtered.loc[idx, 'SEQ']
-            if pd.isna(seq):
-                max_seq = self.df_existing['SEQ'].max()
-                if pd.isna(max_seq):
-                    max_seq = 0
-                else:
-                    max_seq = int(max_seq)
-                seq = max_seq + 1
-                self.df_filtered.at[idx, 'SEQ'] = seq
-
-            if (self.df_existing['SEQ'] == seq).any():
-                for col in self.df_filtered.columns:
-                    if col != 'SEQ':
-                        self.df_existing.loc[self.df_existing['SEQ'] == seq, col] = self.df_filtered.loc[idx, col]
+                QMessageBox.information(self, "Sucesso", "E-mails enviados aos técnicos e gestores das unidades.")
             else:
-                self.df_existing = pd.concat([self.df_existing, self.df_filtered.loc[[idx]]], ignore_index=True)
+                # Se o usuário escolher 'Não', apenas notificar o envio aos técnicos
+                QMessageBox.information(self, "Sucesso", "E-mails enviados apenas aos técnicos.")
 
-        # Garantir que as colunas de data/hora estejam no formato correto (mantendo como datetime)
-        for col in ['DATA/HORA INICIO', 'DATA/HORA FIM']:
-            self.df_existing[col] = pd.to_datetime(self.df_existing[col], errors='coerce')
-
-        try:
-            with pd.ExcelWriter(self.planilha_path, engine='openpyxl') as writer:
-                self.df_existing.to_excel(writer, index=False)
-
-            wb = load_workbook(self.planilha_path)
-            ws = wb.active
-
-            columns = {cell.value: idx+1 for idx, cell in enumerate(ws[1])}
-            inicio_col = columns.get('DATA/HORA INICIO')
-            fim_col = columns.get('DATA/HORA FIM')
-
-            date_format = 'dd/mm/yyyy hh:mm:ss'
-
-            if inicio_col:
-                for cell in ws.iter_cols(min_col=inicio_col, max_col=inicio_col, min_row=2):
-                    for c in cell:
-                        c.number_format = date_format
-
-            if fim_col:
-                for cell in ws.iter_cols(min_col=fim_col, max_col=fim_col, min_row=2):
-                    for c in cell:
-                        c.number_format = date_format
-
-            wb.save(self.planilha_path)
-
-            QMessageBox.information(self, "Sucesso", f"Alterações salvas com sucesso em {self.planilha_path}!")
-            self.table_widget.setEditTriggers(QTableWidget.NoEditTriggers)
-        except Exception as e:
-            QMessageBox.warning(self, "Erro", f"Falha ao salvar as alterações: {e}")
-
-        self.populate_table()
-
-    def send_emails(self):
-        tecnicos = list(self.df_filtered['TÉCNICO'].unique())
-        dialog = EmailSelectionDialog(tecnicos, self.periodo_inicio, self.periodo_fim)
-        if dialog.exec_() == QDialog.Accepted:
-            selected_tecnicos = dialog.selected_tecnicos
-            periodo_inicio = dialog.periodo_inicio
-            periodo_fim = dialog.periodo_fim
-
-            # Filtrar df_filtered com base nos técnicos e período selecionados
-            start_date = pd.to_datetime(periodo_inicio.toString("dd/MM/yyyy"), dayfirst=True)
-            end_date = pd.to_datetime(periodo_fim.toString("dd/MM/yyyy"), dayfirst=True) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-
-            df_to_send = self.df_filtered[
-                (self.df_filtered['DATA/HORA INICIO'] >= start_date) &
-                (self.df_filtered['DATA/HORA INICIO'] <= end_date) &
-                (self.df_filtered['TÉCNICO'].isin(selected_tecnicos))
-            ]
-
-            if df_to_send.empty:
-                QMessageBox.information(self, "Aviso", "Não há registros para os técnicos e período selecionados.")
-                return
-
-            # Configurar a localidade para obter os dias da semana em português
-            try:
-                locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')  # Para sistemas Unix/Linux
-            except:
-                locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil.1252')  # Para Windows
-
-            # Envio de e-mails para os técnicos
-            grouped = df_to_send.groupby('TÉCNICO')
-
-            for tecnico, group in grouped:
-                email = technician_emails.get(tecnico)
-                if not email:
-                    QMessageBox.warning(self, "Aviso", f"E-mail do técnico {tecnico} não encontrado.")
-                    continue
-
-                message = f"Prezado(a) {tecnico},\n\nSegue sua escala:\n\n"
-                for idx, row in group.iterrows():
-                    dia_semana = row['DIA DA SEMANA'] if pd.notnull(row['DIA DA SEMANA']) else ''
-                    data_hora_inicio = row['DATA/HORA INICIO']
-                    data = data_hora_inicio.strftime('%d/%m/%Y') if pd.notnull(data_hora_inicio) else ''
-                    unidade = row['UNIDADE'] if pd.notnull(row['UNIDADE']) and row['UNIDADE'] else ''
-                    justificativa = row['JUSTIFICATIVA'] if pd.notnull(row['JUSTIFICATIVA']) and row['JUSTIFICATIVA'] else ''
-                    card = row['CARD'] if pd.notnull(row['CARD']) and row['CARD'] else ''
-
-                    # Ajuste realizado aqui
-                    entry_message = ''
-                    if dia_semana:
-                        entry_message += f"Dia da Semana: {dia_semana}\n"
-                    if data:
-                        entry_message += f"Data: {data}\n"
-                    if unidade:
-                        entry_message += f"Unidade: {unidade}\n"
-                    elif pd.notnull(row['LOCALIZAÇÃO']) and row['LOCALIZAÇÃO']:
-                        localizacao = row['LOCALIZAÇÃO']
-                        entry_message += f"Localização: {localizacao}\n"
-                    if justificativa:
-                        entry_message += f"Justificativa: {justificativa}\n"
-                    if card:
-                        entry_message += f"Card: {card}\n"
-
-                    message += entry_message + '\n'  # Adiciona uma linha em branco entre as entradas
-
-                message += "Atenciosamente,\nSua Equipe"
-
-                self.send_email(email, "Sua Escala", message)
-
-            QMessageBox.information(self, "Sucesso", "E-mails enviados aos técnicos.")
-
-    # Método para enviar e-mails usando Outlook (ajustado)
-    def send_email(self, to_email, subject, body, send_time=None):
-        try:
-            outlook = win32com.client.Dispatch('outlook.application')
-            mail = outlook.CreateItem(0)
-            mail.To = to_email
-            mail.Subject = subject
-            mail.Body = body
-
-            if send_time:
-                # Verifica se o horário agendado já passou
-                if send_time <= datetime.datetime.now():
-                    # Se o horário já passou, envia imediatamente
-                    pass  # Não define DeferredDeliveryTime
-                else:
-                    # Se o horário está no futuro, agenda o envio
-                    mail.DeferredDeliveryTime = send_time
-            # Envia o e-mail
-            mail.Send()
-
-            # Força o envio/recebimento para garantir que o e-mail saia da caixa de saída
-            namespace = outlook.GetNamespace("MAPI")
-            namespace.SendAndReceive(False)
-
-        except Exception as e:
-            QMessageBox.warning(self, "Erro", f"Falha ao enviar e-mail para {to_email}: {e}")
-
-# Função main
+# Função main para Executar o Aplicativo
 def main():
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon('JT.ico'))
