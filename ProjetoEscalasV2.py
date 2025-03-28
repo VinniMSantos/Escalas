@@ -32,7 +32,7 @@ unit_manager_emails = {
     "UPA Pedreira": "vinicius.santos@libertyti.com.br",
     "UPA Parque Doroteia": "vinicius.santos@libertyti.com.br",
     "HM Benedicto": "vinicius.santos@libertyti.com.br",
-    # Adicione as demais unidades e seus e-mails aqui ...
+    # Adicione as demais unidades e seus e-mails...
 }
 
 technician_emails = {
@@ -47,6 +47,7 @@ technician_emails = {
     "Andre Assis": "vinicius.santos@libertyti.com.br",
     "Valdemir Araujo": "vinicius.santos@libertyti.com.br"
 }
+
 
 # --------------------------------------------------
 #               FUNÇÃO PARA ENVIAR E-MAIL
@@ -113,6 +114,7 @@ class SubstringFilterProxyModel(QSortFilterProxyModel):
 #       COMBOBOX COM FILTRO DE SUBSTRING
 # --------------------------------------------------
 class FilteredComboBox(QComboBox):
+    """ComboBox filtrado por substring."""
     def __init__(self, items, parent=None):
         super().__init__(parent)
         self.setEditable(True)
@@ -164,7 +166,7 @@ class FilteredComboBox(QComboBox):
     def eventFilter(self, source, event):
         if event.type() == QEvent.KeyPress and source is self.lineEdit():
             if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-                pass  # Se quiser disparar alguma ação ao pressionar ENTER no ComboBox, coloque aqui.
+                pass
         return super().eventFilter(source, event)
 
 
@@ -172,6 +174,11 @@ class FilteredComboBox(QComboBox):
 #  CLASSE DE SELEÇÃO DE PLANILHA E PERÍODO INICIAL
 # --------------------------------------------------
 class SelectionDialog(QDialog):
+    """
+    Tela inicial que pergunta Planilha + Período.
+    Esse período será usado apenas se escolher "Incluir Escala".
+    Caso seja "Consultar Escala", será ignorado.
+    """
     def __init__(self):
         super().__init__()
         self.setWindowIcon(QIcon('JT.ico'))
@@ -196,6 +203,7 @@ class SelectionDialog(QDialog):
         self.data_inicio = QDateEdit()
         self.data_inicio.setCalendarPopup(True)
         self.data_inicio.setDate(QDate.currentDate())
+
         self.data_fim = QDateEdit()
         self.data_fim.setCalendarPopup(True)
         self.data_fim.setDate(QDate.currentDate())
@@ -275,6 +283,10 @@ class SelectionDialog(QDialog):
 #     CLASSE PARA ESCOLHER PERÍODO DE CONSULTA
 # --------------------------------------------------
 class PeriodoConsultaDialog(QDialog):
+    """
+    Caso o usuário queira alterar o período
+    enquanto está em "Incluir Escala".
+    """
     def __init__(self):
         super().__init__()
         self.setWindowIcon(QIcon('JT.ico'))
@@ -335,6 +347,7 @@ class PeriodoConsultaDialog(QDialog):
 #   CLASSE PARA SELEÇÃO DE TÉCNICOS (12x36, 5x2)
 # --------------------------------------------------
 class TechnicianSelectionDialog(QDialog):
+    """Seleciona múltiplos técnicos, definindo 'pares' ou 'ímpares' se 12x36."""
     def __init__(self, tecnicos, technician_schedules):
         super().__init__()
         self.setWindowIcon(QIcon('JT.ico'))
@@ -428,9 +441,11 @@ class TechnicianSelectionDialog(QDialog):
 
 
 # --------------------------------------------------
-#   CLASSE PARA ESCOLHER TÉCNICOS/PERÍODO (E-MAIL)
+#   CLASSE PARA ESCOLHER TÉCNICO (via substring) +
+#        PERÍODO PARA ENVIO DE E-MAIL
 # --------------------------------------------------
 class EmailSelectionDialog(QDialog):
+    """Permite digitar parte do nome do técnico e escolher período para o e-mail."""
     def __init__(self, tecnicos, periodo_inicio, periodo_fim):
         super().__init__()
         self.setWindowIcon(QIcon('JT.ico'))
@@ -444,7 +459,6 @@ class EmailSelectionDialog(QDialog):
         self.resize(400, 500)
         layout = QVBoxLayout()
 
-        # Neste exemplo, deixamos como QLineEdit para substring
         self.tecnico_line_edit = QLineEdit()
         self.tecnico_line_edit.setPlaceholderText("Digite (parte do) nome do técnico")
         layout.addWidget(QLabel("Filtrar Técnico:"))
@@ -502,12 +516,18 @@ class EmailSelectionDialog(QDialog):
 
 
 # --------------------------------------------------
-#     NOVA TELA DE CONSULTA COM FILTRO COMPACTO
+#   TELA DE CONSULTA COM FILTRO (TÉCNICO, UNIDADE)
+#   E FILTRO DE DATA
 # --------------------------------------------------
 class ConsultaEscalaDialog(QDialog):
+    """
+    Carrega TODOS os dados (df_filtered) e permite
+    filtrar por Técnico, Unidade e Período (data).
+    """
     def __init__(self, df_filtered, planilha_path, df_existing, periodo_inicio, periodo_fim, labels):
         super().__init__()
         self.setWindowIcon(QIcon('JT.ico'))
+        # Este df_filtered deve conter todos os dados da planilha.
         self.original_df = df_filtered.copy()
         self.df_filtered = df_filtered.copy()
         self.planilha_path = planilha_path
@@ -523,29 +543,39 @@ class ConsultaEscalaDialog(QDialog):
         self.showMaximized()
         layout = QVBoxLayout()
 
-        # --------------------- FILTRO COMPACTO ----------------------
+        # FILTRO EM LINHA (Técnico, Unidade, Data Início, Data Fim)
         filter_layout = QHBoxLayout()
         filter_layout.setSpacing(10)
 
-        # FILTRO POR TÉCNICO
         tecnico_label = QLabel("Técnico:")
         if 'TÉCNICO' in self.original_df.columns:
             lista_tecnicos = sorted(self.original_df['TÉCNICO'].dropna().unique())
         else:
             lista_tecnicos = []
         self.tecnico_combo = FilteredComboBox(lista_tecnicos, parent=self)
-        self.tecnico_combo.setFixedWidth(200)
+        self.tecnico_combo.setFixedWidth(120)
 
-        # FILTRO POR UNIDADE
         unidade_label = QLabel("Unidade:")
         if 'UNIDADE' in self.original_df.columns:
             lista_unidades = sorted(self.original_df['UNIDADE'].dropna().unique())
         else:
             lista_unidades = []
         self.unidade_combo = FilteredComboBox(lista_unidades, parent=self)
-        self.unidade_combo.setFixedWidth(200)
+        self.unidade_combo.setFixedWidth(120)
 
-        # BOTÕES FILTRAR E LIMPAR
+        # Período de filtro
+        data_inicio_label = QLabel("Início:")
+        self.data_inicio_filter = QDateEdit()
+        self.data_inicio_filter.setCalendarPopup(True)
+        self.data_inicio_filter.setDate(self.periodo_inicio)
+        self.data_inicio_filter.setFixedWidth(110)
+
+        data_fim_label = QLabel("Fim:")
+        self.data_fim_filter = QDateEdit()
+        self.data_fim_filter.setCalendarPopup(True)
+        self.data_fim_filter.setDate(self.periodo_fim)
+        self.data_fim_filter.setFixedWidth(110)
+
         self.apply_filter_button = QPushButton("Filtrar")
         self.apply_filter_button.clicked.connect(self.apply_filter)
         self.apply_filter_button.setFixedHeight(30)
@@ -559,16 +589,19 @@ class ConsultaEscalaDialog(QDialog):
         filter_layout.addWidget(self.tecnico_combo)
         filter_layout.addWidget(unidade_label)
         filter_layout.addWidget(self.unidade_combo)
+        filter_layout.addWidget(data_inicio_label)
+        filter_layout.addWidget(self.data_inicio_filter)
+        filter_layout.addWidget(data_fim_label)
+        filter_layout.addWidget(self.data_fim_filter)
         filter_layout.addWidget(self.apply_filter_button)
         filter_layout.addWidget(self.clear_filter_button)
-        # -----------------------------------------------------------
 
         layout.addLayout(filter_layout)
 
-        # Garante a ordem das colunas
+        # Ordena colunas
         self.df_filtered = self.df_filtered[self.labels]
 
-        # Converter colunas de data
+        # Converte data/hora
         for col in ['DATA/HORA INICIO', 'DATA/HORA FIM']:
             self.df_filtered[col] = pd.to_datetime(
                 self.df_filtered[col], format="%d/%m/%Y %H:%M:%S", errors='coerce'
@@ -608,7 +641,7 @@ class ConsultaEscalaDialog(QDialog):
         self.populate_table()
         layout.addWidget(self.table_widget)
 
-        # BARRA DE BOTÕES: EDITAR, EXCLUIR, SALVAR, ENVIAR
+        # Botões: Editar, Excluir, Salvar, Enviar
         buttons_layout = QHBoxLayout()
         buttons_layout.addStretch()
 
@@ -643,10 +676,8 @@ class ConsultaEscalaDialog(QDialog):
         layout.addLayout(buttons_layout)
         self.setLayout(layout)
 
-    # -----------------------------------------------------------
-    #                 MÉTODOS DE FILTRO
-    # -----------------------------------------------------------
     def apply_filter(self):
+        """Filtrar por Técnico, Unidade e Data (início/fim)."""
         tech_text = self.tecnico_combo.currentText().strip()
         unit_text = self.unidade_combo.currentText().strip()
 
@@ -657,20 +688,36 @@ class ConsultaEscalaDialog(QDialog):
         if unit_text and 'UNIDADE' in df_temp.columns:
             df_temp = df_temp[df_temp['UNIDADE'].str.contains(unit_text, case=False, na=False)]
 
+        start_qdate = self.data_inicio_filter.date()
+        end_qdate = self.data_fim_filter.date()
+        if end_qdate < start_qdate:
+            QMessageBox.warning(self, "Aviso", "Data fim não pode ser antes da data início.")
+            return
+
+        start_date = QDateTime(start_qdate, QTime(0, 0, 0)).toPyDateTime()
+        end_date = QDateTime(end_qdate, QTime(23, 59, 59)).toPyDateTime()
+
+        df_temp['DATA/HORA INICIO'] = pd.to_datetime(df_temp['DATA/HORA INICIO'], errors='coerce')
+        df_temp = df_temp[
+            (df_temp['DATA/HORA INICIO'] >= start_date) &
+            (df_temp['DATA/HORA INICIO'] <= end_date)
+        ]
+
         self.df_filtered = df_temp.copy()
 
         for col in ['DATA/HORA INICIO', 'DATA/HORA FIM']:
             self.df_filtered[col] = pd.to_datetime(
                 self.df_filtered[col], format="%d/%m/%Y %H:%M:%S", errors='coerce'
             )
-
         self.df_filtered = self.df_filtered[self.labels]
         self.sort_columns.clear()
         self.populate_table()
         self.clear_filter_button.setEnabled(True)
 
     def clear_filter(self):
+        """Remove o filtro e exibe todos os dados novamente."""
         self.df_filtered = self.original_df.copy()
+
         for col in ['DATA/HORA INICIO', 'DATA/HORA FIM']:
             self.df_filtered[col] = pd.to_datetime(
                 self.df_filtered[col], format="%d/%m/%Y %H:%M:%S", errors='coerce'
@@ -682,10 +729,9 @@ class ConsultaEscalaDialog(QDialog):
         self.clear_filter_button.setEnabled(False)
         self.tecnico_combo.setCurrentText("")
         self.unidade_combo.setCurrentText("")
+        self.data_inicio_filter.setDate(self.periodo_inicio)
+        self.data_fim_filter.setDate(self.periodo_fim)
 
-    # -----------------------------------------------------------
-    #          PREENCHER A TABELA E EDIÇÃO
-    # -----------------------------------------------------------
     def populate_table(self):
         self.table_widget.clearContents()
         self.table_widget.setRowCount(len(self.df_filtered))
@@ -702,11 +748,9 @@ class ConsultaEscalaDialog(QDialog):
                         display_value = str(value)
                 item = QTableWidgetItem(display_value)
 
-                # Impede edição na coluna SEQ
                 if self.df_filtered.columns[col] == 'SEQ':
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
 
-                # Colorir localização
                 if self.df_filtered.columns[col] == 'LOCALIZAÇÃO':
                     color_map = {
                         'Unidade': '#17a2b8',
@@ -716,11 +760,37 @@ class ConsultaEscalaDialog(QDialog):
                         'Home': '#20c997',
                         'Online': '#8fbc8f'
                     }
-                    color = color_map.get(display_value, None)
-                    if color:
-                        item.setBackground(QColor(color))
+                    cor = color_map.get(display_value, None)
+                    if cor:
+                        item.setBackground(QColor(cor))
 
                 self.table_widget.setItem(row, col, item)
+
+    def handle_header_click(self, logicalIndex):
+        column_name = self.df_filtered.columns[logicalIndex]
+        existing = next((item for item in self.sort_columns if item[0] == column_name), None)
+        if existing:
+            self.sort_columns.remove(existing)
+            ascending = not existing[1]
+        else:
+            ascending = True
+
+        self.sort_columns.insert(0, (column_name, ascending))
+        order = Qt.AscendingOrder if ascending else Qt.DescendingOrder
+        self.table_widget.horizontalHeader().setSortIndicator(logicalIndex, order)
+        self.sort_table()
+
+    def sort_table(self):
+        if not self.sort_columns:
+            return
+        sort_by = [col for col, asc in self.sort_columns]
+        ascending = [asc for col, asc in self.sort_columns]
+        self.df_filtered.sort_values(
+            by=sort_by, ascending=ascending, inplace=True,
+            key=lambda col: col.str.lower() if col.dtype == object else col
+        )
+        self.df_filtered.reset_index(drop=True, inplace=True)
+        self.populate_table()
 
     def enable_editing(self):
         self.table_widget.setEditTriggers(QTableWidget.AllEditTriggers)
@@ -736,7 +806,7 @@ class ConsultaEscalaDialog(QDialog):
             QMessageBox.warning(self, "Aviso", "Nenhuma linha selecionada para excluir.")
 
     def save_changes(self):
-        # Atualizar dataframe de acordo com a tabela
+        # Atualiza self.df_filtered
         for row_index in range(self.table_widget.rowCount()):
             for col_index in range(self.table_widget.columnCount()):
                 item = self.table_widget.item(row_index, col_index)
@@ -772,7 +842,7 @@ class ConsultaEscalaDialog(QDialog):
                             value = str(value)
                     self.df_filtered.iloc[row_index, col_index] = value
 
-        # Identificar SEQs excluídas
+        # SEQs que foram excluídas no período principal
         start_date = pd.to_datetime(self.periodo_inicio.toString("dd/MM/yyyy"), dayfirst=True)
         end_date = pd.to_datetime(self.periodo_fim.toString("dd/MM/yyyy"), dayfirst=True) \
                    + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
@@ -837,10 +907,8 @@ class ConsultaEscalaDialog(QDialog):
 
         self.populate_table()
 
-    # -----------------------------------------------------------
-    #       ENVIO DE EMAILS (CHAMA EmailSelectionDialog)
-    # -----------------------------------------------------------
     def send_emails(self):
+        """Abre EmailSelectionDialog p/ substring + período e envia e-mail."""
         tecnicos = list(self.df_filtered['TÉCNICO'].unique())
         dialog = EmailSelectionDialog(tecnicos, self.periodo_inicio, self.periodo_fim)
         if dialog.exec_() == QDialog.Accepted:
@@ -865,7 +933,6 @@ class ConsultaEscalaDialog(QDialog):
             start_date = QDateTime(periodo_inicio, QTime(0, 0)).toPyDateTime()
             end_date = QDateTime(periodo_fim, QTime(23, 59, 59)).toPyDateTime()
 
-            # Filtra por substring do nome do técnico
             df_filtered = df_existing[
                 (df_existing['DATA/HORA INICIO'] >= start_date) &
                 (df_existing['DATA/HORA INICIO'] <= end_date) &
@@ -906,7 +973,7 @@ class ConsultaEscalaDialog(QDialog):
                 for idx, row in group.iterrows():
                     dia_semana = row.get('DIA DA SEMANA', '')
                     data_hora_inicio = row.get('DATA/HORA INICIO')
-                    data = data_hora_inicio.strftime('%d/%m/%Y') if pd.notnull(data_hora_inicio) else ''
+                    data_str = data_hora_inicio.strftime('%d/%m/%Y') if pd.notnull(data_hora_inicio) else ''
                     unidade = row.get('UNIDADE', '')
                     localizacao = row.get('LOCALIZAÇÃO', '')
                     justificativa = row.get('JUSTIFICATIVA', '')
@@ -915,7 +982,7 @@ class ConsultaEscalaDialog(QDialog):
                     message += f"""
                             <tr>
                                 <td>{dia_semana}</td>
-                                <td>{data}</td>
+                                <td>{data_str}</td>
                                 <td>{unidade}</td>
                                 <td>{localizacao}</td>
                                 <td>{justificativa}</td>
@@ -963,7 +1030,7 @@ class ConsultaEscalaDialog(QDialog):
                             Atenciosamente,<br>Sua Equipe
                             <br><br>
                             <img src="cid:MinhaImagem" alt="Assinatura" />
-                        </p>
+                        </body>
                     </html>
                     """
                     data_envio = datetime.datetime.combine(data_visita, datetime.time(7, 0))
@@ -981,9 +1048,6 @@ class ConsultaEscalaDialog(QDialog):
             else:
                 QMessageBox.information(self, "Sucesso", "E-mails enviados apenas aos técnicos.")
 
-    # -----------------------------------------------------------
-    #            ESTILOS DE BOTÕES ESPECÍFICOS
-    # -----------------------------------------------------------
     def get_primary_button_style(self):
         return """
             QPushButton {
@@ -1026,40 +1090,16 @@ class ConsultaEscalaDialog(QDialog):
             }
         """
 
-    # -----------------------------------------------------------
-    #            ORDENAR AO CLICAR NO CABEÇALHO
-    # -----------------------------------------------------------
-    def handle_header_click(self, logicalIndex):
-        column_name = self.df_filtered.columns[logicalIndex]
-        existing = next((item for item in self.sort_columns if item[0] == column_name), None)
-        if existing:
-            self.sort_columns.remove(existing)
-            ascending = not existing[1]
-        else:
-            ascending = True
-
-        self.sort_columns.insert(0, (column_name, ascending))
-        order = Qt.AscendingOrder if ascending else Qt.DescendingOrder
-        self.table_widget.horizontalHeader().setSortIndicator(logicalIndex, order)
-        self.sort_table()
-
-    def sort_table(self):
-        if not self.sort_columns:
-            return
-        sort_by = [col for col, asc in self.sort_columns]
-        ascending = [asc for col, asc in self.sort_columns]
-        self.df_filtered.sort_values(
-            by=sort_by, ascending=ascending, inplace=True,
-            key=lambda col: col.str.lower() if col.dtype == object else col
-        )
-        self.df_filtered.reset_index(drop=True, inplace=True)
-        self.populate_table()
-
 
 # --------------------------------------------------
 #        FORM PRINCIPAL PARA INCLUIR ESCALAS
 # --------------------------------------------------
 class ScheduleForm(QWidget):
+    """
+    Tela principal para Incluir Escala.
+    Ao clicar em "Consultar Escala", iremos ignorar o período inicial
+    e mostrar todos os dados da planilha em 'ConsultaEscalaDialog'.
+    """
     def __init__(self, planilha_path, periodo_inicio, periodo_fim):
         super().__init__()
         self.setWindowIcon(QIcon('JT.ico'))
@@ -1087,159 +1127,13 @@ class ScheduleForm(QWidget):
 
         self.init_ui()
 
-    def reset_enter(self):
-        self.enter_pressed_once = False
-        self.enter_timer.stop()
-
-    def handle_enter_press(self):
-        if self.enter_pressed_once:
-            self.enter_pressed_once = False
-            self.enter_timer.stop()
-            self.add_entry()
-        else:
-            self.enter_pressed_once = True
-            self.enter_timer.start()
-
-    def should_work(self, tecnico, date):
-        tecnico_info = self.technician_schedules.get(tecnico, {})
-        if not tecnico_info:
-            return False
-        escala = tecnico_info.get('escala')
-        if escala == '5X2':
-            dia_semana = date.dayOfWeek()  # 1=Seg ... 7=Dom
-            return dia_semana in tecnico_info.get('dias_trabalho', [])
-        elif escala == '12X36':
-            dias_trabalho = self.tecnicos_12x36_dias.get(tecnico)
-            if dias_trabalho:
-                dia_mes = date.day()
-                if dias_trabalho == 'pares':
-                    return (dia_mes % 2 == 0)
-                elif dias_trabalho == 'impares':
-                    return (dia_mes % 2 != 0)
-        return False
-
-    def does_on_call(self, tecnico):
-        tecnico_info = self.technician_schedules.get(tecnico)
-        if not tecnico_info:
-            return False
-        sobreaviso_info = tecnico_info.get('sobreaviso', {})
-        return sobreaviso_info.get('faz_sobreaviso', False)
-
-    def incluir_escala_semanal(self):
-        tecnicos = list(self.technician_schedules.keys())
-        dialog = TechnicianSelectionDialog(tecnicos, self.technician_schedules)
-        if dialog.exec_() == QDialog.Accepted:
-            selected_tecnicos = dialog.selected_tecnicos
-            self.tecnicos_12x36_dias = {}
-            for tecnico, dias_trabalho in selected_tecnicos.items():
-                if self.technician_schedules[tecnico]['escala'] == '12X36':
-                    self.tecnicos_12x36_dias[tecnico] = dias_trabalho
-            for tecnico in selected_tecnicos:
-                current_date = self.periodo_inicio
-                while current_date <= self.periodo_fim:
-                    if self.should_work(tecnico, current_date):
-                        self.combo_box_tecnico.setCurrentText(tecnico)
-                        self.date_time_edit_inicio.setDate(current_date)
-                        self.update_fields_based_on_tecnico()
-                        self.add_entry()
-                    current_date = current_date.addDays(1)
-
-    def add_entry(self):
-        dia_semana = self.dia_semana.text()
-        localizacao = self.combo_box_localizacao.currentText()
-        unidade = self.combo_box_unidade.currentText()
-        tecnico = self.combo_box_tecnico.currentText()
-        escala = self.escala_label.text()
-        turno = self.combo_box_turno.currentText()
-        data_hora_inicio = self.date_time_edit_inicio.dateTime()
-        data_hora_fim = self.date_time_edit_fim.dateTime()
-        justificativa = self.justificativa.text()
-        card_value = self.card_input.text()
-
-        tecnico_info = self.technician_schedules.get(tecnico, {})
-        escala = tecnico_info.get('escala', '')
-
-        # Valida se está no dia de trabalho
-        if escala == '5X2' and localizacao != 'Sobreaviso' and not self.should_work(tecnico, data_hora_inicio.date()):
-            QMessageBox.warning(
-                self, "Erro",
-                f"{tecnico} não está programado para trabalhar em {data_hora_inicio.toString('dd/MM/yyyy')}."
-            )
-            return
-
-        if localizacao == 'Sobreaviso' and not self.does_on_call(tecnico):
-            QMessageBox.warning(
-                self, "Erro",
-                f"{tecnico} não está configurado para Sobreaviso."
-            )
-            return
-
-        data_hora_inicio_dt = data_hora_inicio.toPyDateTime()
-        data_hora_fim_dt = data_hora_fim.toPyDateTime()
-        data_hora_inicio_str = data_hora_inicio_dt.strftime("%d/%m/%Y %H:%M:%S")
-        data_hora_fim_str = data_hora_fim_dt.strftime("%d/%m/%Y %H:%M:%S")
-
-        fields = [
-            dia_semana,
-            localizacao,
-            unidade,
-            tecnico,
-            escala,
-            turno,
-            data_hora_inicio_str,
-            data_hora_fim_str,
-            justificativa,
-            card_value
-        ]
-
-        if self.editing_row is not None:
-            for column, value in enumerate(fields):
-                self.table_widget.setItem(self.editing_row, column, QTableWidgetItem(value))
-            self.original_data[self.editing_row] = fields
-            self.editing_row = None
-            self.add_button.setText(" Adicionar")
-            self.add_button.setIcon(QIcon("icons/add.png"))
-        else:
-            row_position = self.table_widget.rowCount()
-            self.table_widget.insertRow(row_position)
-            for column, value in enumerate(fields):
-                self.table_widget.setItem(row_position, column, QTableWidgetItem(value))
-            self.original_data.append(fields)
-
-            # Se for Sobreaviso no domingo, gerar folga automática segunda
-            if localizacao == 'Sobreaviso':
-                day_of_week = data_hora_inicio.date().dayOfWeek()
-                if day_of_week == 7:  # Domingo
-                    tecnico_info = self.technician_schedules.get(tecnico)
-                    if tecnico_info:
-                        folga_date = data_hora_inicio.addDays(1)
-                        horario_inicio = tecnico_info.get('horario_inicio', '00:00')
-                        horario_fim = tecnico_info.get('horario_fim', '00:00')
-                        folga_inicio = QDateTime(folga_date.date(), QTime.fromString(horario_inicio, "HH:mm"))
-                        folga_fim = QDateTime(folga_date.date(), QTime.fromString(horario_fim, "HH:mm"))
-
-                        folga_dia_semana = self.get_dia_semana_text(folga_inicio)
-                        folga_fields = [
-                            folga_dia_semana,
-                            "Folga",
-                            "",
-                            tecnico,
-                            escala,
-                            turno,
-                            folga_inicio.toString("dd/MM/yyyy HH:mm:ss"),
-                            folga_fim.toString("dd/MM/yyyy HH:mm:ss"),
-                            "Folga após sobreaviso",
-                            ""
-                        ]
-                        row_position = self.table_widget.rowCount()
-                        self.table_widget.insertRow(row_position)
-                        for column, value2 in enumerate(folga_fields):
-                            self.table_widget.setItem(row_position, column, QTableWidgetItem(value2))
-                        self.original_data.append(folga_fields)
-
-        self.clear_fields()
-
     def init_ui(self):
+        """
+        Aqui vai todo o layout completo do seu ScheduleForm,
+        incluindo a tabela, combos de localização/unidade/tecnico,
+        e localizacao_options com "Online".
+        """
+        # Exemplo do seu layout final:
         main_layout = QVBoxLayout()
         main_layout.setAlignment(Qt.AlignTop)
         main_layout.setSpacing(0)
@@ -1269,14 +1163,12 @@ class ScheduleForm(QWidget):
             'DATA/HORA INICIO', 'DATA/HORA FIM', 'JUSTIFICATIVA', 'CARD'
         ]
 
-        # Adicionamos "Online" aqui no localizacao_options
         localizacao_options = ["", "Folga", "Férias", "Sobreaviso", "Unidade", "Escritório", "Home", "Online"]
 
-        # Exemplos de unidades (pode ajustar conforme necessidade)
         unidades = [
             "AMA Zaio", "HM Benedicto", "HM Campo Limpo", "HM Tatuape", "HM Tide",
             "UPA Pedreira", "UPA Parque Doroteia", "Escritório",
-            # ... etc ...
+            # etc ...
         ]
         tecnicos = list(self.technician_schedules.keys())
         turnos = ["Diurno", "Noturno"]
@@ -1557,7 +1449,7 @@ class ScheduleForm(QWidget):
             }
         """)
         self.setLayout(main_layout)
-        self.setWindowTitle('Saints V')
+        self.setWindowTitle('GIRA TURNOS')
         self.resize(1200, 600)
         self.show()
 
@@ -1618,6 +1510,7 @@ class ScheduleForm(QWidget):
         """
 
     def change_period(self):
+        """Permite mudar o período durante a inclusão de escala."""
         periodo_dialog = PeriodoConsultaDialog()
         if periodo_dialog.exec_() == QDialog.Accepted:
             self.periodo_inicio = periodo_dialog.periodo_inicio
@@ -1629,6 +1522,160 @@ class ScheduleForm(QWidget):
             self.date_time_edit_inicio.setMaximumDate(self.periodo_fim)
             self.date_time_edit_fim.setMinimumDate(self.periodo_inicio)
             self.date_time_edit_fim.setMaximumDate(self.periodo_fim.addDays(1))
+
+    def reset_enter(self):
+        self.enter_pressed_once = False
+        self.enter_timer.stop()
+
+    def handle_enter_press(self):
+        if self.enter_pressed_once:
+            self.enter_pressed_once = False
+            self.enter_timer.stop()
+            self.add_entry()
+        else:
+            self.enter_pressed_once = True
+            self.enter_timer.start()
+
+    def should_work(self, tecnico, date):
+        """Verifica se técnico deve trabalhar numa data (5x2 ou 12x36)."""
+        tecnico_info = self.technician_schedules.get(tecnico, {})
+        if not tecnico_info:
+            return False
+        escala = tecnico_info.get('escala')
+        if escala == '5X2':
+            dia_semana = date.dayOfWeek()  # 1=Seg ... 7=Dom
+            return dia_semana in tecnico_info.get('dias_trabalho', [])
+        elif escala == '12X36':
+            dias_trabalho = self.tecnicos_12x36_dias.get(tecnico)
+            if dias_trabalho:
+                dia_mes = date.day()
+                if dias_trabalho == 'pares':
+                    return (dia_mes % 2 == 0)
+                elif dias_trabalho == 'impares':
+                    return (dia_mes % 2 != 0)
+        return False
+
+    def does_on_call(self, tecnico):
+        """Verifica se técnico faz sobreaviso."""
+        tecnico_info = self.technician_schedules.get(tecnico)
+        if not tecnico_info:
+            return False
+        sobreaviso_info = tecnico_info.get('sobreaviso', {})
+        return sobreaviso_info.get('faz_sobreaviso', False)
+
+    def incluir_escala_semanal(self):
+        """Inclui escala pré-preenchida para o período selecionado."""
+        tecnicos = list(self.technician_schedules.keys())
+        dialog = TechnicianSelectionDialog(tecnicos, self.technician_schedules)
+        if dialog.exec_() == QDialog.Accepted:
+            selected_tecnicos = dialog.selected_tecnicos
+            self.tecnicos_12x36_dias = {}
+            for tecnico, dias_trabalho in selected_tecnicos.items():
+                if self.technician_schedules[tecnico]['escala'] == '12X36':
+                    self.tecnicos_12x36_dias[tecnico] = dias_trabalho
+            for tecnico in selected_tecnicos:
+                current_date = self.periodo_inicio
+                while current_date <= self.periodo_fim:
+                    if self.should_work(tecnico, current_date):
+                        self.combo_box_tecnico.setCurrentText(tecnico)
+                        self.date_time_edit_inicio.setDate(current_date)
+                        self.update_fields_based_on_tecnico()
+                        self.add_entry()
+                    current_date = current_date.addDays(1)
+
+    def add_entry(self):
+        """Adiciona uma entrada na tabela."""
+        dia_semana = self.dia_semana.text()
+        localizacao = self.combo_box_localizacao.currentText()
+        unidade = self.combo_box_unidade.currentText()
+        tecnico = self.combo_box_tecnico.currentText()
+        escala = self.escala_label.text()
+        turno = self.combo_box_turno.currentText()
+        data_hora_inicio = self.date_time_edit_inicio.dateTime()
+        data_hora_fim = self.date_time_edit_fim.dateTime()
+        justificativa = self.justificativa.text()
+        card_value = self.card_input.text()
+
+        tecnico_info = self.technician_schedules.get(tecnico, {})
+        escala = tecnico_info.get('escala', '')
+
+        if escala == '5X2' and localizacao != 'Sobreaviso' and not self.should_work(tecnico, data_hora_inicio.date()):
+            QMessageBox.warning(
+                self, "Erro",
+                f"{tecnico} não está programado para trabalhar em {data_hora_inicio.toString('dd/MM/yyyy')}."
+            )
+            return
+
+        if localizacao == 'Sobreaviso' and not self.does_on_call(tecnico):
+            QMessageBox.warning(
+                self, "Erro",
+                f"{tecnico} não está configurado para Sobreaviso."
+            )
+            return
+
+        data_hora_inicio_dt = data_hora_inicio.toPyDateTime()
+        data_hora_fim_dt = data_hora_fim.toPyDateTime()
+        data_hora_inicio_str = data_hora_inicio_dt.strftime("%d/%m/%Y %H:%M:%S")
+        data_hora_fim_str = data_hora_fim_dt.strftime("%d/%m/%Y %H:%M:%S")
+
+        fields = [
+            dia_semana,
+            localizacao,
+            unidade,
+            tecnico,
+            escala,
+            turno,
+            data_hora_inicio_str,
+            data_hora_fim_str,
+            justificativa,
+            card_value
+        ]
+
+        if self.editing_row is not None:
+            for column, value in enumerate(fields):
+                self.table_widget.setItem(self.editing_row, column, QTableWidgetItem(value))
+            self.original_data[self.editing_row] = fields
+            self.editing_row = None
+            self.add_button.setText(" Adicionar")
+            self.add_button.setIcon(QIcon("icons/add.png"))
+        else:
+            row_position = self.table_widget.rowCount()
+            self.table_widget.insertRow(row_position)
+            for column, value in enumerate(fields):
+                self.table_widget.setItem(row_position, column, QTableWidgetItem(value))
+            self.original_data.append(fields)
+
+            if localizacao == 'Sobreaviso':
+                day_of_week = data_hora_inicio.date().dayOfWeek()
+                if day_of_week == 7:  # Domingo
+                    tecnico_info = self.technician_schedules.get(tecnico)
+                    if tecnico_info:
+                        folga_date = data_hora_inicio.addDays(1)
+                        horario_inicio = tecnico_info.get('horario_inicio', '00:00')
+                        horario_fim = tecnico_info.get('horario_fim', '00:00')
+                        folga_inicio = QDateTime(folga_date.date(), QTime.fromString(horario_inicio, "HH:mm"))
+                        folga_fim = QDateTime(folga_date.date(), QTime.fromString(horario_fim, "HH:mm"))
+
+                        folga_dia_semana = self.get_dia_semana_text(folga_inicio)
+                        folga_fields = [
+                            folga_dia_semana,
+                            "Folga",
+                            "",
+                            tecnico,
+                            escala,
+                            turno,
+                            folga_inicio.toString("dd/MM/yyyy HH:mm:ss"),
+                            folga_fim.toString("dd/MM/yyyy HH:mm:ss"),
+                            "Folga após sobreaviso",
+                            ""
+                        ]
+                        row_position = self.table_widget.rowCount()
+                        self.table_widget.insertRow(row_position)
+                        for column, value2 in enumerate(folga_fields):
+                            self.table_widget.setItem(row_position, column, QTableWidgetItem(value2))
+                        self.original_data.append(folga_fields)
+
+        self.clear_fields()
 
     def clear_fields(self):
         self.combo_box_localizacao.setCurrentIndex(0)
@@ -1805,13 +1852,9 @@ class ScheduleForm(QWidget):
         QMessageBox.information(self, "Sucesso", "Escala finalizada e salva com sucesso!")
 
     def consultar_escala(self, periodo_inicio=None, periodo_fim=None):
-        if periodo_inicio is None or periodo_fim is None:
-            periodo_dialog = PeriodoConsultaDialog()
-            if periodo_dialog.exec_() == QDialog.Accepted:
-                periodo_inicio = periodo_dialog.periodo_inicio
-                periodo_fim = periodo_dialog.periodo_fim
-            else:
-                return
+        """
+        Ignora o período e mostra TODOS os dados da planilha em ConsultaEscalaDialog.
+        """
         try:
             df_existing = pd.read_excel(self.planilha_path)
             df_existing.columns = df_existing.columns.str.upper()
@@ -1827,21 +1870,21 @@ class ScheduleForm(QWidget):
             df_existing['DATA/HORA INICIO'], format="%d/%m/%Y %H:%M:%S", errors='coerce'
         )
 
-        start_date = QDateTime(periodo_inicio, QTime(0, 0)).toPyDateTime()
-        end_date = QDateTime(periodo_fim, QTime(23, 59, 59)).toPyDateTime()
-        df_filtered = df_existing[
-            (df_existing['DATA/HORA INICIO'] >= start_date) &
-            (df_existing['DATA/HORA INICIO'] <= end_date)
-        ]
+        # Carrega tudo (sem filtrar pelo período)
+        df_filtered = df_existing.copy()
 
         if df_filtered.empty:
-            QMessageBox.information(self, "Aviso", "Não há registros no período selecionado.")
+            QMessageBox.information(self, "Aviso", "Não há registros na planilha.")
             return
 
-        # Agora abrimos a nova Tela com filtro compacto
+        # Abre a nova tela de consulta com TUDO
         self.consulta_dialog = ConsultaEscalaDialog(
-            df_filtered, self.planilha_path, df_existing,
-            periodo_inicio, periodo_fim, ['SEQ'] + self.labels
+            df_filtered,
+            self.planilha_path,
+            df_existing,
+            self.periodo_inicio,
+            self.periodo_fim,
+            ['SEQ'] + self.labels
         )
         self.consulta_dialog.show()
 
@@ -1931,7 +1974,7 @@ class ScheduleForm(QWidget):
             super().keyPressEvent(event)
 
     def send_emails(self):
-        # Mesmo método para envio rápido (sem abrir a consulta)
+        """Método de envio rápido de e-mail (sem abrir a consulta)."""
         tecnicos = list(self.technician_schedules.keys())
         dialog = EmailSelectionDialog(tecnicos, self.periodo_inicio, self.periodo_fim)
         if dialog.exec_() == QDialog.Accepted:
@@ -2066,7 +2109,6 @@ class ScheduleForm(QWidget):
             else:
                 QMessageBox.information(self, "Sucesso", "E-mails enviados apenas aos técnicos.")
 
-
 # --------------------------------------------------
 #               FUNÇÃO MAIN
 # --------------------------------------------------
@@ -2082,8 +2124,11 @@ def main():
         choice = selection_dialog.choice
 
         form = ScheduleForm(planilha_path, periodo_inicio, periodo_fim)
+
+        # Se escolher "Consultar Escala", ignoramos o período inicial
+        # e exibimos tudo no ConsultaEscalaDialog
         if choice == 'consultar_escala':
-            form.consultar_escala(periodo_inicio, periodo_fim)
+            form.consultar_escala()
 
         sys.exit(app.exec_())
     else:
