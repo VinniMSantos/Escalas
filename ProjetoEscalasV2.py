@@ -12,14 +12,14 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBox, QDateTimeEdit,
     QPushButton, QLineEdit, QCompleter, QTableWidget, QTableWidgetItem, QHeaderView,
     QSizePolicy, QFileDialog, QDialog, QDateEdit, QMessageBox,
-    QAbstractItemView, QRadioButton, QButtonGroup, QScrollArea, QFormLayout, QCheckBox
+    QAbstractItemView, QRadioButton, QButtonGroup, QScrollArea, QFormLayout, QCheckBox,
+    QMenu, QAction
 )
 from PyQt5.QtCore import (
     Qt, QDateTime, QDate, QTime, QStringListModel, QTimer, QSortFilterProxyModel,
     QRegularExpression, QPoint, pyqtSignal, QEvent
 )
-from PyQt5.QtGui import QFont, QIcon, QMouseEvent, QColor, QBrush
-
+from PyQt5.QtGui import QFont, QIcon, QMouseEvent, QColor, QBrush, QStandardItemModel, QStandardItem
 
 # --------------------------------------------------
 #                DICIONÁRIOS DE E-MAIL
@@ -31,8 +31,7 @@ unit_manager_emails = {
     "HM Tide": "natalia.lima@libertyti.com.br",
     "UPA Pedreira": "vinicius.santos@libertyti.com.br",
     "UPA Parque Doroteia": "vinicius.santos@libertyti.com.br",
-    "HM Benedicto": "vinicius.santos@libertyti.com.br",
-    # Adicione as demais unidades e seus e-mails...
+    # ...
 }
 
 technician_emails = {
@@ -47,7 +46,6 @@ technician_emails = {
     "Andre Assis": "vinicius.santos@libertyti.com.br",
     "Valdemir Araujo": "vinicius.santos@libertyti.com.br"
 }
-
 
 # --------------------------------------------------
 #               FUNÇÃO PARA ENVIAR E-MAIL
@@ -80,7 +78,6 @@ def send_email(to_email, subject, html_body, send_time=None):
     except Exception as e:
         QMessageBox.warning(None, "Erro", f"Falha ao enviar e-mail para {to_email}: {e}")
 
-
 # --------------------------------------------------
 #               CLASSE LABEL CLICÁVEL
 # --------------------------------------------------
@@ -89,9 +86,9 @@ class ClickableLabel(QLabel):
     def mousePressEvent(self, event):
         self.clicked.emit()
 
-
 # --------------------------------------------------
 #     CLASSE PARA FILTRO DE SUBSTRING NO QComboBox
+#       (USADO SOMENTE PARA 'UNIDADE' NESTE EXEMPLO)
 # --------------------------------------------------
 class SubstringFilterProxyModel(QSortFilterProxyModel):
     def __init__(self, parent=None):
@@ -109,9 +106,9 @@ class SubstringFilterProxyModel(QSortFilterProxyModel):
             return True
         return False
 
-
 # --------------------------------------------------
 #       COMBOBOX COM FILTRO DE SUBSTRING
+#         (Apenas para UNIDADE neste exemplo)
 # --------------------------------------------------
 class FilteredComboBox(QComboBox):
     """ComboBox filtrado por substring."""
@@ -169,6 +166,61 @@ class FilteredComboBox(QComboBox):
                 pass
         return super().eventFilter(source, event)
 
+# --------------------------------------------------
+#   CLASSE PARA MULTI-SELEÇÃO DE TÉCNICOS
+#        (PARA O FILTRO DE CONSULTA)
+# --------------------------------------------------
+class MultiSelectComboBox(QComboBox):
+    """
+    Exibe um menu de checkboxes para cada item da lista.
+    Permite selecionar vários itens, retornando em `checkedItems()`.
+    """
+    def __init__(self, items, parent=None):
+        super().__init__(parent)
+        self.items = items
+        self.checked_items = []
+        self.setEditable(True)  # Para manter tamanho similar ao FilteredComboBox
+        self.setInsertPolicy(QComboBox.NoInsert)
+        self.setStyleSheet("""
+            QComboBox {
+                border: 1px solid #ced4da;
+                border-radius: 4px;
+                padding: 5px;
+                font-size: 14px;
+                font-family: 'Segoe UI', sans-serif;
+                background-color: #fff;
+            }
+        """)
+        # Model para exibir o texto "vazio" no QComboBox (porque usaremos menu)
+        self.model_base = QStringListModel(items)
+        self.setMaxVisibleItems(len(items))  # Ajusta dropdown, se quiser
+
+    def showPopup(self):
+        menu = QMenu(self)
+        self.actions = []
+
+        for item in self.items:
+            action = QAction(item, menu)
+            action.setCheckable(True)
+            action.setChecked(item in self.checked_items)
+            action.triggered.connect(self.update_checked_items)
+            self.actions.append(action)
+            menu.addAction(action)
+
+        menu.popup(self.mapToGlobal(self.rect().bottomLeft()))
+
+    def update_checked_items(self):
+        self.checked_items = [action.text() for action in self.actions if action.isChecked()]
+        # Atualiza texto do ComboBox
+        if self.checked_items:
+            display_text = ", ".join(self.checked_items)
+        else:
+            display_text = ""
+        self.setCurrentText(display_text)
+
+    def checkedItems(self):
+        """Retorna a lista de itens selecionados."""
+        return self.checked_items
 
 # --------------------------------------------------
 #  CLASSE DE SELEÇÃO DE PLANILHA E PERÍODO INICIAL
@@ -278,7 +330,6 @@ class SelectionDialog(QDialog):
             }
         """
 
-
 # --------------------------------------------------
 #     CLASSE PARA ESCOLHER PERÍODO DE CONSULTA
 # --------------------------------------------------
@@ -341,7 +392,6 @@ class PeriodoConsultaDialog(QDialog):
                 background-color: #0056b3;
             }
         """
-
 
 # --------------------------------------------------
 #   CLASSE PARA SELEÇÃO DE TÉCNICOS (12x36, 5x2)
@@ -439,7 +489,6 @@ class TechnicianSelectionDialog(QDialog):
             }
         """
 
-
 # --------------------------------------------------
 #   CLASSE PARA ESCOLHER TÉCNICO (via substring) +
 #        PERÍODO PARA ENVIO DE E-MAIL
@@ -514,15 +563,14 @@ class EmailSelectionDialog(QDialog):
             }
         """
 
-
 # --------------------------------------------------
 #   TELA DE CONSULTA COM FILTRO (TÉCNICO, UNIDADE)
-#   E FILTRO DE DATA
+#   E FILTRO DE DATA -- MULTI-SELEÇÃO DE TÉCNICOS
 # --------------------------------------------------
 class ConsultaEscalaDialog(QDialog):
     """
     Carrega TODOS os dados (df_filtered) e permite
-    filtrar por Técnico, Unidade e Período (data).
+    filtrar por Técnico (agora múltiplos), Unidade e Período (data).
     """
     def __init__(self, df_filtered, planilha_path, df_existing, periodo_inicio, periodo_fim, labels):
         super().__init__()
@@ -548,11 +596,14 @@ class ConsultaEscalaDialog(QDialog):
         filter_layout.setSpacing(10)
 
         tecnico_label = QLabel("Técnico:")
+
+        # Lista de técnicos para multi-seleção
         if 'TÉCNICO' in self.original_df.columns:
             lista_tecnicos = sorted(self.original_df['TÉCNICO'].dropna().unique())
         else:
             lista_tecnicos = []
-        self.tecnico_combo = FilteredComboBox(lista_tecnicos, parent=self)
+        # Aqui usamos a MultiSelectComboBox
+        self.tecnico_combo = MultiSelectComboBox(lista_tecnicos, parent=self)
         self.tecnico_combo.setFixedWidth(120)
 
         unidade_label = QLabel("Unidade:")
@@ -677,14 +728,16 @@ class ConsultaEscalaDialog(QDialog):
         self.setLayout(layout)
 
     def apply_filter(self):
-        """Filtrar por Técnico, Unidade e Data (início/fim)."""
-        tech_text = self.tecnico_combo.currentText().strip()
+        """Filtrar por (múltiplos) Técnicos, Unidade e Data (início/fim)."""
+        selected_techs = self.tecnico_combo.checkedItems()  # lista de técnicos
         unit_text = self.unidade_combo.currentText().strip()
 
         df_temp = self.original_df.copy()
 
-        if tech_text:
-            df_temp = df_temp[df_temp['TÉCNICO'].str.contains(tech_text, case=False, na=False)]
+        # Se houver técnicos marcados, filtra por esses nomes (OR).
+        if selected_techs:
+            df_temp = df_temp[df_temp['TÉCNICO'].isin(selected_techs)]
+
         if unit_text and 'UNIDADE' in df_temp.columns:
             df_temp = df_temp[df_temp['UNIDADE'].str.contains(unit_text, case=False, na=False)]
 
@@ -727,6 +780,8 @@ class ConsultaEscalaDialog(QDialog):
         self.populate_table()
 
         self.clear_filter_button.setEnabled(False)
+        # "Limpar" a MultiSelectComboBox
+        self.tecnico_combo.checked_items.clear()
         self.tecnico_combo.setCurrentText("")
         self.unidade_combo.setCurrentText("")
         self.data_inicio_filter.setDate(self.periodo_inicio)
@@ -847,7 +902,7 @@ class ConsultaEscalaDialog(QDialog):
         end_date = pd.to_datetime(self.periodo_fim.toString("dd/MM/yyyy"), dayfirst=True) \
                    + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
         df_existing_period = self.df_existing[
-            (self.df_existing['DATA/HORA INICIO'] >= start_date) &
+            (self.df_existing['DATA/HORA INICIO'] >= start_date) & 
             (self.df_existing['DATA/HORA INICIO'] <= end_date)
         ]
         existing_seqs_in_period = set(df_existing_period['SEQ'])
@@ -1090,7 +1145,6 @@ class ConsultaEscalaDialog(QDialog):
             }
         """
 
-
 # --------------------------------------------------
 #        FORM PRINCIPAL PARA INCLUIR ESCALAS
 # --------------------------------------------------
@@ -1129,11 +1183,10 @@ class ScheduleForm(QWidget):
 
     def init_ui(self):
         """
-        Aqui vai todo o layout completo do seu ScheduleForm,
+        Layout completo do ScheduleForm,
         incluindo a tabela, combos de localização/unidade/tecnico,
         e localizacao_options com "Online".
         """
-        # Exemplo do seu layout final:
         main_layout = QVBoxLayout()
         main_layout.setAlignment(Qt.AlignTop)
         main_layout.setSpacing(0)
@@ -1165,6 +1218,9 @@ class ScheduleForm(QWidget):
 
         localizacao_options = ["", "Folga", "Férias", "Sobreaviso", "Unidade", "Escritório", "Home", "Online"]
 
+        # --------------------------
+        # APENAS 3 UNIDADES EXEMPLO:
+        # --------------------------
         unidades = [
             "CRST Freguesia do Ó", "CRST Lapa", "CRST Leste", "CRST Mooca", "CRST Santo Amaro", "CRST Sé", "H Cantareira", "HD Brasilandia", "HM Alipio", "HM Benedicto",
 "HM Cachoeirinha", "HM Campo Limpo", "HM Capela Do Socorro", "HM Hungria", "HM Ignacio", "HM Mario Degni", "HM Saboya", "HM Sorocabana", "HM Tatuape", "HM Tide",
@@ -1185,6 +1241,7 @@ class ScheduleForm(QWidget):
 "UPA Tiradentes", "UPA Tito Lopes", "UPA Vera Cruz", "UPA Vergueiro", "UPA Vila Mariana", "UPA Vila Santa Catarina", "Ouro Verde", "UPA Anchieta", "UPA Campo Grande", "UPA Carlos Lourenço",
 "UPA Sao Jose"
         ]
+
         tecnicos = list(self.technician_schedules.keys())
         turnos = ["Diurno", "Noturno"]
 
@@ -2148,7 +2205,6 @@ def main():
         sys.exit(app.exec_())
     else:
         sys.exit()
-
 
 if __name__ == '__main__':
     main()
