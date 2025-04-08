@@ -29,9 +29,7 @@ unit_manager_emails = {
     "HM Campo Limpo": "eduardo.lima@libertyti.com.br",
     "HM Tatuape": "vinicius.santos@libertyti.com.br",
     "HM Tide": "natalia.lima@libertyti.com.br",
-    "UPA Pedreira": "vinicius.santos@libertyti.com.br",
-    "UPA Parque Doroteia": "vinicius.santos@libertyti.com.br",
-    # ...
+    # ... (se houver mais unidades, pode acrescentar aqui)
 }
 
 technician_emails = {
@@ -58,6 +56,7 @@ def send_email(to_email, subject, html_body, send_time=None):
         mail.Subject = subject
         mail.HTMLBody = html_body
 
+        # Ajustar caminho da assinatura, se necessário
         assinatura_path = r"C:\Users\LIBERTY\Documents\escalas versao\Escalas\assinatura_vinicius.png.png"
         attachment = mail.Attachments.Add(assinatura_path)
         attachment.PropertyAccessor.SetProperty(
@@ -583,6 +582,10 @@ class ConsultaEscalaDialog(QDialog):
         self.periodo_inicio = periodo_inicio
         self.periodo_fim = periodo_fim
         self.labels = labels
+
+        # NOVO: armazenará SEQ das linhas excluídas
+        self.deleted_seq = set()
+
         self.sort_columns = []
         self.init_ui()
 
@@ -803,9 +806,11 @@ class ConsultaEscalaDialog(QDialog):
                         display_value = str(value)
                 item = QTableWidgetItem(display_value)
 
+                # Bloqueia edição da coluna SEQ
                 if self.df_filtered.columns[col] == 'SEQ':
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
 
+                # Cor de fundo conforme LOCALIZAÇÃO (opcional)
                 if self.df_filtered.columns[col] == 'LOCALIZAÇÃO':
                     color_map = {
                         'Unidade': '#17a2b8',
@@ -854,14 +859,27 @@ class ConsultaEscalaDialog(QDialog):
         selected_rows = self.table_widget.selectionModel().selectedRows()
         if selected_rows:
             selected_row = selected_rows[0].row()
+
+            # Captura SEQ da linha que será removida, se existir
+            if 'SEQ' in self.df_filtered.columns:
+                seq_val = self.df_filtered.loc[self.df_filtered.index[selected_row], 'SEQ']
+            else:
+                seq_val = None
+
             self.table_widget.removeRow(selected_row)
-            self.df_filtered = self.df_filtered.drop(self.df_filtered.index[selected_row]).reset_index(drop=True)
+            self.df_filtered.drop(self.df_filtered.index[selected_row], inplace=True)
+            self.df_filtered.reset_index(drop=True, inplace=True)
+
+            # Se SEQ for válido, guarda no set para exclusão definitiva
+            if seq_val is not None and pd.notna(seq_val):
+                self.deleted_seq.add(int(seq_val))
+
             QMessageBox.information(self, "Sucesso", "Entrada excluída com sucesso.")
         else:
             QMessageBox.warning(self, "Aviso", "Nenhuma linha selecionada para excluir.")
 
     def save_changes(self):
-        # Atualiza self.df_filtered
+        # Atualiza self.df_filtered com o que está na tabela
         for row_index in range(self.table_widget.rowCount()):
             for col_index in range(self.table_widget.columnCount()):
                 item = self.table_widget.item(row_index, col_index)
@@ -897,26 +915,19 @@ class ConsultaEscalaDialog(QDialog):
                             value = str(value)
                     self.df_filtered.iloc[row_index, col_index] = value
 
-        # SEQs que foram excluídas no período principal
-        start_date = pd.to_datetime(self.periodo_inicio.toString("dd/MM/yyyy"), dayfirst=True)
-        end_date = pd.to_datetime(self.periodo_fim.toString("dd/MM/yyyy"), dayfirst=True) \
-                   + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-        df_existing_period = self.df_existing[
-            (self.df_existing['DATA/HORA INICIO'] >= start_date) & 
-            (self.df_existing['DATA/HORA INICIO'] <= end_date)
-        ]
-        existing_seqs_in_period = set(df_existing_period['SEQ'])
+        # >>> Remove do df_existing as linhas de SEQ que foram excluídas
+        if 'SEQ' in self.df_existing.columns and len(self.deleted_seq) > 0:
+            self.df_existing = self.df_existing[~self.df_existing['SEQ'].isin(self.deleted_seq)]
+            # se quiser, pode limpar: self.deleted_seq.clear()
 
-        filtered_seqs = set(self.df_filtered['SEQ'])
-        seqs_to_delete = existing_seqs_in_period - filtered_seqs
-        if seqs_to_delete:
-            self.df_existing = self.df_existing[~self.df_existing['SEQ'].isin(seqs_to_delete)]
-
-        # Adicionar / atualizar
+        # Agora, apenas atualizamos/adicionamos
         for idx in self.df_filtered.index:
             seq = self.df_filtered.loc[idx, 'SEQ']
             if pd.isna(seq):
-                max_seq = self.df_existing['SEQ'].max()
+                if not self.df_existing.empty:
+                    max_seq = self.df_existing['SEQ'].max()
+                else:
+                    max_seq = 0
                 if pd.isna(max_seq):
                     max_seq = 0
                 else:
@@ -924,11 +935,13 @@ class ConsultaEscalaDialog(QDialog):
                 seq = max_seq + 1
                 self.df_filtered.at[idx, 'SEQ'] = seq
 
+            # Atualiza se já existir:
             if (self.df_existing['SEQ'] == seq).any():
                 for col in self.df_filtered.columns:
                     if col != 'SEQ':
                         self.df_existing.loc[self.df_existing['SEQ'] == seq, col] = self.df_filtered.loc[idx, col]
             else:
+                # Se for linha nova
                 self.df_existing = pd.concat([self.df_existing, self.df_filtered.loc[[idx]]], ignore_index=True)
 
         for col in ['DATA/HORA INICIO', 'DATA/HORA FIM']:
@@ -957,10 +970,37 @@ class ConsultaEscalaDialog(QDialog):
             wb.save(self.planilha_path)
             QMessageBox.information(self, "Sucesso", f"Alterações salvas com sucesso em {self.planilha_path}!")
             self.table_widget.setEditTriggers(QTableWidget.NoEditTriggers)
+
+            # Agora recarrega a planilha para sincronizar tudo
+            self.reload_after_save()
+
         except Exception as e:
             QMessageBox.warning(self, "Erro", f"Falha ao salvar as alterações: {e}")
 
-        self.populate_table()
+    def reload_after_save(self):
+        """
+        Recarrega a planilha atualizada, reflete em df_existing, df_filtered e original_df.
+        """
+        try:
+            updated_df = pd.read_excel(self.planilha_path)
+            updated_df.columns = updated_df.columns.str.upper()
+
+            # Converte colunas de data/hora
+            for c in ['DATA/HORA INICIO', 'DATA/HORA FIM']:
+                if c in updated_df.columns:
+                    updated_df[c] = pd.to_datetime(updated_df[c], format="%d/%m/%Y %H:%M:%S", errors='coerce')
+
+            self.df_existing = updated_df.copy()
+            self.original_df = updated_df.copy()
+            self.df_filtered = updated_df.copy()
+
+            # Mantém somente colunas necessárias
+            self.df_filtered = self.df_filtered[self.labels]
+
+            self.populate_table()
+
+        except Exception as re_load_err:
+            QMessageBox.warning(self, "Aviso", f"Falha ao recarregar planilha após salvar: {re_load_err}")
 
     def send_emails(self):
         """Abre EmailSelectionDialog p/ substring + período e envia e-mail."""
@@ -1218,29 +1258,200 @@ class ScheduleForm(QWidget):
 
         localizacao_options = ["", "Folga", "Férias", "Sobreaviso", "Unidade", "Escritório", "Home", "Online"]
 
-        # --------------------------
-        # APENAS 3 UNIDADES EXEMPLO:
-        # --------------------------
+        # Exemplo de unidades. Pode adaptar conforme necessidade.
         unidades = [
-            "CRST Freguesia do Ó", "CRST Lapa", "CRST Leste", "CRST Mooca", "CRST Santo Amaro", "CRST Sé", "H Cantareira", "HD Brasilandia", "HM Alipio", "HM Benedicto",
-"HM Cachoeirinha", "HM Campo Limpo", "HM Capela Do Socorro", "HM Hungria", "HM Ignacio", "HM Mario Degni", "HM Saboya", "HM Sorocabana", "HM Tatuape", "HM Tide",
-"HM Waldomiro", "HM Zaio", "PA Sao Mateus", "PSM Balneario Sao Jose", "UPA Dona Maria Antonieta", "UPA Elisa Maria", "UPA Lapa", "UPA Parelheiros", "UPA Pedreira", "CAPS AD II Cachoeirinha",
-"CAPS AD II Cangaiba", "CAPS AD II Cidade Ademar", "CAPS AD II Ermelino Matarazzo", "CAPS AD II Guaianases", "CAPS AD II Jabaquara", "CAPS AD II Jardim Nelia", "CAPS AD II Mooca", "CAPS AD II Pinheiros", "CAPS AD II Sacoma", "CAPS AD II Santo Amaro",
-"CAPS AD II Sapopemba", "CAPS AD II Vila Madalena Prosam", "CAPS AD II Vila Mariana", "CAPS AD III Armenia", "CAPS AD III Boracea", "CAPS AD III Butanta", "CAPS AD III Campo Limpo", "CAPS AD III Capela Do Socorro", "CAPS AD III Centro", "CAPS AD III Complexo Prates",
-"CAPS AD III Freguesia Do O Brasilandia", "CAPS AD III Grajau", "CAPS AD III Heliopolis", "CAPS AD III Itaquera", "CAPS AD III Jardim Angela", "CAPS AD III Jardim Sao Luiz", "CAPS AD III Leopoldina", "CAPS AD III Mandaqui", "CAPS AD III Paraisopolis", "CAPS AD III Penha",
-"CAPS AD III Pirituba Casa Azul", "CAPS AD III Santana", "CAPS AD III Sao Mateus Liberdade De Escolha", "CAPS AD III Sao Miguel", "CAPS AD IV Redencao", "CAPS Adulto II Aricanduva Formosa", "CAPS Adulto II Brasilandia", "CAPS Adulto II Butanta", "CAPS Adulto II Casa Verde", "CAPS Adulto II Cidade Ademar",
-"CAPS Adulto II Cidade Tiradentes", "CAPS Adulto II Ermelino Matarazzo", "CAPS Adulto II Guaianases Artur Bispo Do Rosario", "CAPS Adulto II Itaim Bibi", "CAPS Adulto II Itaim Paulista", "CAPS Adulto II Itaquera", "CAPS Adulto II Jabaquara", "CAPS Adulto II Jacana Dr Leonidio Galvao Dos Santos", "CAPS Adulto II Jardim Lidia", "CAPS Adulto II Perdizes Manoel Munhoz",
-"CAPS Adulto II Perus", "CAPS Adulto II Sao Miguel", "CAPS Adulto II Vila Monumento", "CAPS Adulto II Vila Prudente", "CAPS Adulto III Capela Do Socorro", "CAPS Adulto III Freguesia Do O Brasilandia", "CAPS Adulto III Grajau", "CAPS Adulto III Itaim Bibi", "CAPS Adulto III Jardim Sao Luiz", "CAPS Adulto III Lapa",
-"CAPS Adulto III Largo 13", "CAPS Adulto III M Boi Mirim", "CAPS Adulto III Mandaqui", "CAPS Adulto III Mooca", "CAPS Adulto III Paraisopolis", "CAPS Adulto III Parelheiros", "CAPS Adulto III Perdizes", "CAPS Adulto III Pirituba Jaragua", "CAPS Adulto III Sao Mateus", "CAPS Adulto III Sapopemba",
-"CAPS Adulto III Se", "CAPS Adulto III Vila Matilde", "CAPS IJ II Butanta", "CAPS IJ II Campo Limpo", "CAPS IJ II Capela Do Socorro Piracao", "CAPS IJ II Casa Verde Nise Da Silveira", "CAPS IJ II Cidade Ademar", "CAPS IJ II Cidade Lider", "CAPS IJ II Cidade Tiradentes", "CAPS IJ II Ermelino Matarazzo",
-"CAPS IJ II Freguesia Do O Brasilandia", "CAPS IJ II Guaianases Coloridamente", "CAPS IJ II Ipiranga", "CAPS IJ II Itaim Paulista", "CAPS IJ II Itaquera", "CAPS IJ II Jabaquara Casinha", "CAPS IJ II Lapa", "CAPS IJ II M Boi Mirim", "CAPS IJ II Mooca", "CAPS IJ II Parelheiros Aquarela",
-"CAPS IJ II Perus", "CAPS IJ II Pirituba Jaragua", "CAPS IJ II Santo Amaro", "CAPS IJ II Sao Mateus", "CAPS IJ II Sapopemba", "CAPS IJ II Vila Maria Vila Guilherme", "CAPS IJ II Vila Mariana Quixote", "CAPS IJ II Vila Prudente", "CAPS IJ III Aricanduva", "CAPS IJ III Cidade Dutra",
-"CAPS IJ III Heliopolis", "CAPS IJ III Jardim Sao Luiz", "CAPS IJ III Penha", "CAPS IJ III Pirituba", "CAPS IJ III Santana", "CAPS IJ III Sao Miguel", "CAPS IJ III Se Amorzeira", "CIES - Luz Campos Elíseos", "PSM Álvaro Dino", "CNR Redenção",
-"UPA 21 de Junho", "UPA 26 de Agosto", "SCP AD Boracea", "SCP AD Pirituba", "UPA Campo Limpo", "UPA Carrao", "UPA City Jaragua", "UPA Ermelino Matarazzo", "UPA Jabaquara", "UPA Jacana",
-"UPA Jardim Angela", "UPA Julio Tupy", "UPA Mooca", "UPA Parque Doroteia", "UPA Peri", "UPA Perus", "UPA Pirituba", "UPA Rio Pequeno", "UPA Santo Amaro", "UPA Tatuape",
-"UPA Tiradentes", "UPA Tito Lopes", "UPA Vera Cruz", "UPA Vergueiro", "UPA Vila Mariana", "UPA Vila Santa Catarina", "Ouro Verde", "UPA Anchieta", "UPA Campo Grande", "UPA Carlos Lourenço",
-"UPA Sao Jose"
-        ]
+    "CRST Freguesia do Ó", 
+    "CRST Lapa", 
+    "CRST Leste", 
+    "CRST Mooca", 
+    "CRST Santo Amaro", 
+    "CRST Sé", 
+    "H Cantareira", 
+    "HD Brasilandia", 
+    "HM Alipio", 
+    "HM Benedicto",
+
+    "HM Brigadeiro", 
+    "HM Cachoeirinha", 
+    "HM Campo Limpo", 
+    "HM Capela Do Socorro", 
+    "HM Hungria", 
+    "HM Ignacio", 
+    "HM Mario Degni", 
+    "HM Saboya", 
+    "HM Sorocabana", 
+    "HM Tatuape",
+
+    "HM Tide", 
+    "HM Waldomiro", 
+    "HM Zaio", 
+    "PA Sao Mateus", 
+    "PSM Balneario Sao Jose", 
+    "UPA Dona Maria Antonieta", 
+    "UPA Elisa Maria", 
+    "UPA Lapa", 
+    "UPA Parelheiros", 
+    "UPA Pedreira",
+
+    "CAPS AD II Cachoeirinha", 
+    "CAPS AD II Cangaiba", 
+    "CAPS AD II Cidade Ademar", 
+    "CAPS AD II Ermelino Matarazzo", 
+    "CAPS AD II Guaianases", 
+    "CAPS AD II Jabaquara", 
+    "CAPS AD II Jardim Nelia", 
+    "CAPS AD II Mooca", 
+    "CAPS AD II Pinheiros", 
+    "CAPS AD II Sacoma",
+
+    "CAPS AD II Santo Amaro", 
+    "CAPS AD II Sapopemba", 
+    "CAPS AD II Vila Madalena Prosam", 
+    "CAPS AD II Vila Mariana", 
+    "CAPS AD III Armenia", 
+    "CAPS AD III Boracea", 
+    "CAPS AD III Butanta", 
+    "CAPS AD III Campo Limpo", 
+    "CAPS AD III Capela Do Socorro", 
+    "CAPS AD III Centro",
+
+    "CAPS AD III Complexo Prates", 
+    "CAPS AD III Freguesia Do O Brasilandia", 
+    "CAPS AD III Grajau", 
+    "CAPS AD III Heliopolis", 
+    "CAPS AD III Itaquera", 
+    "CAPS AD III Jardim Angela", 
+    "CAPS AD III Jardim Sao Luiz", 
+    "CAPS AD III Leopoldina", 
+    "CAPS AD III Mandaqui", 
+    "CAPS AD III Paraisopolis",
+
+    "CAPS AD III Penha", 
+    "CAPS AD III Pirituba Casa Azul", 
+    "CAPS AD III Santana", 
+    "CAPS AD III Sao Mateus Liberdade De Escolha", 
+    "CAPS AD III Sao Miguel", 
+    "CAPS AD IV Redencao", 
+    "CAPS Adulto II Aricanduva Formosa", 
+    "CAPS Adulto II Brasilandia", 
+    "CAPS Adulto II Butanta", 
+    "CAPS Adulto II Casa Verde",
+
+    "CAPS Adulto II Cidade Ademar", 
+    "CAPS Adulto II Cidade Tiradentes", 
+    "CAPS Adulto II Ermelino Matarazzo", 
+    "CAPS Adulto II Guaianases Artur Bispo Do Rosario", 
+    "CAPS Adulto II Itaim Bibi", 
+    "CAPS Adulto II Itaim Paulista", 
+    "CAPS Adulto II Itaquera", 
+    "CAPS Adulto II Jabaquara", 
+    "CAPS Adulto II Jacana Dr Leonidio Galvao Dos Santos", 
+    "CAPS Adulto II Jardim Lidia",
+
+    "CAPS Adulto II Perdizes Manoel Munhoz", 
+    "CAPS Adulto II Perus", 
+    "CAPS Adulto II Sao Miguel", 
+    "CAPS Adulto II Vila Monumento", 
+    "CAPS Adulto II Vila Prudente", 
+    "CAPS Adulto III Capela Do Socorro", 
+    "CAPS Adulto III Freguesia Do O Brasilandia", 
+    "CAPS Adulto III Grajau", 
+    "CAPS Adulto III Itaim Bibi", 
+    "CAPS Adulto III Jardim Sao Luiz",
+
+    "CAPS Adulto III Lapa", 
+    "CAPS Adulto III Largo 13", 
+    "CAPS Adulto III M Boi Mirim", 
+    "CAPS Adulto III Mandaqui", 
+    "CAPS Adulto III Mooca", 
+    "CAPS Adulto III Paraisopolis", 
+    "CAPS Adulto III Parelheiros", 
+    "CAPS Adulto III Perdizes", 
+    "CAPS Adulto III Pirituba Jaragua", 
+    "CAPS Adulto III Sao Mateus",
+
+    "CAPS Adulto III Sapopemba", 
+    "CAPS Adulto III Se", 
+    "CAPS Adulto III Vila Matilde", 
+    "CAPS IJ II Butanta", 
+    "CAPS IJ II Campo Limpo", 
+    "CAPS IJ II Capela Do Socorro Piracao", 
+    "CAPS IJ II Casa Verde Nise Da Silveira", 
+    "CAPS IJ II Cidade Ademar", 
+    "CAPS IJ II Cidade Lider", 
+    "CAPS IJ II Cidade Tiradentes",
+
+    "CAPS IJ II Ermelino Matarazzo", 
+    "CAPS IJ II Freguesia Do O Brasilandia", 
+    "CAPS IJ II Guaianases Coloridamente", 
+    "CAPS IJ II Ipiranga", 
+    "CAPS IJ II Itaim Paulista", 
+    "CAPS IJ II Itaquera", 
+    "CAPS IJ II Jabaquara Casinha", 
+    "CAPS IJ II Lapa", 
+    "CAPS IJ II M Boi Mirim", 
+    "CAPS IJ II Mooca",
+
+    "CAPS IJ II Parelheiros Aquarela", 
+    "CAPS IJ II Perus", 
+    "CAPS IJ II Pirituba Jaragua", 
+    "CAPS IJ II Santo Amaro", 
+    "CAPS IJ II Sao Mateus", 
+    "CAPS IJ II Sapopemba", 
+    "CAPS IJ II Vila Maria Vila Guilherme", 
+    "CAPS IJ II Vila Mariana Quixote", 
+    "CAPS IJ II Vila Prudente", 
+    "CAPS IJ III Aricanduva",
+
+    "CAPS IJ III Cidade Dutra", 
+    "CAPS IJ III Heliopolis", 
+    "CAPS IJ III Jardim Sao Luiz", 
+    "CAPS IJ III Penha", 
+    "CAPS IJ III Pirituba", 
+    "CAPS IJ III Santana", 
+    "CAPS IJ III Sao Miguel", 
+    "CAPS IJ III Se Amorzeira", 
+    "CIES - Luz Campos Elíseos", 
+    "PSM Álvaro Dino",
+
+    "CNR Redenção", 
+    "UPA 21 de Junho", 
+    "UPA 26 de Agosto", 
+    "SCP AD Boracea", 
+    "SCP AD Pirituba", 
+    "UPA Campo Limpo", 
+    "UPA Carrao", 
+    "UPA City Jaragua", 
+    "UPA Ermelino Matarazzo", 
+    "UPA Jabaquara",
+
+    "UPA Jacana", 
+    "UPA Jardim Angela", 
+    "UPA Julio Tupy", 
+    "UPA Mooca", 
+    "UPA Parque Doroteia", 
+    "UPA Peri", 
+    "UPA Perus", 
+    "UPA Pirituba", 
+    "UPA Rio Pequeno", 
+    "UPA Santo Amaro",
+
+    "UPA Tatuape", 
+    "UPA Tiradentes", 
+    "UPA Tito Lopes", 
+    "UPA Vera Cruz", 
+    "UPA Vergueiro", 
+    "UPA Vila Mariana", 
+    "UPA Vila Santa Catarina", 
+    "Ouro Verde", 
+    "UPA Anchieta", 
+    "UPA Campo Grande",
+
+    "UPA Carlos Lourenço", 
+    "UPA Sao Jose",
+    "UPA Barra Funda",
+    "UPA Augusto Gomes de Matos"
+]
 
         tecnicos = list(self.technician_schedules.keys())
         turnos = ["Diurno", "Noturno"]
@@ -1648,6 +1859,8 @@ class ScheduleForm(QWidget):
             for tecnico in selected_tecnicos:
                 current_date = self.periodo_inicio
                 while current_date <= self.periodo_fim:
+                    # Verifica apenas se precisa inserir (12x36 ou 5x2),
+                    # mas não impede se quiser criar manualmente no fim de semana
                     if self.should_work(tecnico, current_date):
                         self.combo_box_tecnico.setCurrentText(tecnico)
                         self.date_time_edit_inicio.setDate(current_date)
@@ -1668,16 +1881,12 @@ class ScheduleForm(QWidget):
         justificativa = self.justificativa.text()
         card_value = self.card_input.text()
 
-        tecnico_info = self.technician_schedules.get(tecnico, {})
-        escala = tecnico_info.get('escala', '')
+        # -------------------------------
+        # *** AQUI FOI REMOVIDA A VALIDAÇÃO
+        # QUE IMPEDIA TÉCNICO 5X2 NO FIM DE SEMANA
+        # -------------------------------
 
-        if escala == '5X2' and localizacao != 'Sobreaviso' and not self.should_work(tecnico, data_hora_inicio.date()):
-            QMessageBox.warning(
-                self, "Erro",
-                f"{tecnico} não está programado para trabalhar em {data_hora_inicio.toString('dd/MM/yyyy')}."
-            )
-            return
-
+        # Verificação se é sobreaviso e o técnico não faz sobreaviso:
         if localizacao == 'Sobreaviso' and not self.does_on_call(tecnico):
             QMessageBox.warning(
                 self, "Erro",
@@ -1717,6 +1926,7 @@ class ScheduleForm(QWidget):
                 self.table_widget.setItem(row_position, column, QTableWidgetItem(value))
             self.original_data.append(fields)
 
+            # Exemplo de inserir uma folga automática após sobreaviso de domingo
             if localizacao == 'Sobreaviso':
                 day_of_week = data_hora_inicio.date().dayOfWeek()
                 if day_of_week == 7:  # Domingo
@@ -1977,6 +2187,7 @@ class ScheduleForm(QWidget):
         selected_datetime = self.date_time_edit_inicio.dateTime()
         selected_date = selected_datetime.date()
 
+        # Se estiver em sobreaviso
         if selected_localizacao == 'Sobreaviso' and self.does_on_call(tecnico_nome):
             sobreaviso_info = tecnico_info.get('sobreaviso', {})
             if unidade_preenchida:
